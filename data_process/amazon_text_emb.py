@@ -106,13 +106,18 @@ def generate_item_embedding(args, item_text_list, tokenizer, model, word_drop_ra
 
 
 def parse_args():
+    # 基于脚本位置计算项目默认路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    data_root = os.path.join(project_root, 'data')
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='Instruments', help='Instruments / Arts / Games')
-    parser.add_argument('--root', type=str, default="/userhome/dataset/MQL4GRec")
+    parser.add_argument('--dataset', type=str, default='Arts', help='Instruments / Arts / Games')
+    parser.add_argument('--root', type=str, default=data_root)
     parser.add_argument('--gpu_id', type=int, default=0, help='ID of running GPU')
     parser.add_argument('--plm_name', type=str, default='llama')
     parser.add_argument('--model_name_or_path', type=str, default='huggyllama/llama-7b')
-    parser.add_argument('--model_cache_dir', type=str, default='/userhome/cache_models')
+    parser.add_argument('--model_cache_dir', type=str, default=os.path.join(project_root, 'cache_models'))
     parser.add_argument('--max_sent_len', type=int, default=2048)
     parser.add_argument('--word_drop_ratio', type=float, default=-1, help='word drop ratio, do not drop by default')
     return parser.parse_args()

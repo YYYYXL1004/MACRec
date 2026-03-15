@@ -1,0 +1,46 @@
+# 数据与压缩包
+*.gz
+*.csv
+*.zip
+*.tar
+*.tar.gz
+
+# 原始/处理后数据目录（含大文件）
+data/Arts/
+data/Games/
+data/Instruments/
+data/raw_amazon2018/
+
+# 可能很大的中间/产出文件
+*.npy
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+
+# 大 JSON（按需可收紧为具体文件名）
+# data/*/*.inter.json
+# data/*/*.item.json
+
+# 模型与缓存
+cache_models/
+*.onnx
+
+# Python
+data_process/__pycache__/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# 系统与 IDE
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

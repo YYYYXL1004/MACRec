@@ -176,12 +176,17 @@ def main(args, meta_items):
 
 
 def parse_args():
+    # 基于脚本位置计算项目默认路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    raw_data_root = os.path.join(project_root, 'data', 'raw_amazon2018')
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='Arts', help='Instruments / Arts / Games')
-    parser.add_argument('--meta_data_path', type=str, default='/datasets/datasets/amazon18/Metadata')
-    parser.add_argument('--rating_data_path', type=str, default='/datasets/datasets/amazon18/Ratings')
-    parser.add_argument('--review_data_path', type=str, default='/datasets/datasets/amazon18/Review')
-    parser.add_argument('--save_path', type=str, default='/datasets/datasets/amazon18/Images')
+    parser.add_argument('--meta_data_path', type=str, default=os.path.join(raw_data_root, 'Metadata'))
+    parser.add_argument('--rating_data_path', type=str, default=os.path.join(raw_data_root, 'Ratings'))
+    parser.add_argument('--review_data_path', type=str, default=os.path.join(raw_data_root, 'Review'))
+    parser.add_argument('--save_path', type=str, default=os.path.join(raw_data_root, 'Images'))
     return parser.parse_args()
 
 if __name__ == "__main__":

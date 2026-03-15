@@ -79,13 +79,19 @@ def get_feature(args):
     np.save(file, embeddings)
     
 def parse_args():
+    # 基于脚本位置计算项目默认路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    raw_data_root = os.path.join(project_root, 'data', 'raw_amazon2018')
+    data_root = os.path.join(project_root, 'data')
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='Instruments', help='Instruments / Arts / Games')
-    parser.add_argument('--image_root', type=str, default="/userhome/dataset/amazon18/Images")
-    parser.add_argument('--save_root', type=str, default="/userhome/dataset/MQL4GRec")
+    parser.add_argument('--dataset', type=str, default='Arts', help='Instruments / Arts / Games')
+    parser.add_argument('--image_root', type=str, default=os.path.join(raw_data_root, 'Images'))
+    parser.add_argument('--save_root', type=str, default=data_root)
     parser.add_argument('--gpu_id', type=int, default=0, help='ID of running GPU')
     parser.add_argument('--backbone', type=str, default='ViT-L/14')
-    parser.add_argument('--model_cache_dir', type=str, default='/userhome/cache_models/clip')
+    parser.add_argument('--model_cache_dir', type=str, default=os.path.join(project_root, 'cache_models', 'clip'))
     return parser.parse_args()
     
 if __name__ == "__main__":

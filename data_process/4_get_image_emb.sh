@@ -1,10 +1,7 @@
+# 用法: bash 4_get_image_emb.sh Arts [GPU_ID]
+# 支持: Arts / Games / Instruments
+DATASET=${1:-Arts}
+GPU_ID=${2:-0}
 
-export CUDA_VISIBLE_DEVICES=1
-
-python clip_feature.py \
-    --image_root /userhome/dataset/amazon18/Images \
-    --save_root /userhome/dataset/MQL4GRec \
-    --model_cache_dir /userhome/cache_models/clip \
-    --dataset Instruments
-
-
+export CUDA_VISIBLE_DEVICES=$GPU_ID
+python clip_feature.py --dataset $DATASET

@@ -1,7 +1,5 @@
+# 用法: bash 2_process.sh Arts
+# 支持: Arts / Games / Instruments
+DATASET=${1:-Arts}
 
-
-
-
-python amazon18_data_process.py \
-    --input_path /userhome/dataset/amazon18 \
-    --output_path /userhome/dataset/MQL4GRec
+python amazon18_data_process.py --dataset $DATASET
