@@ -10,7 +10,9 @@ data/Arts/
 data/Games/
 data/Instruments/
 data/raw_amazon2018/
-
+cross_index/log
+train_logs
+log
 # 可能很大的中间/产出文件
 *.npy
 *.pkl

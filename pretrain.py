@@ -113,7 +113,7 @@ def train(args):
             logging_steps=args.logging_step,
             optim=args.optim,
             gradient_checkpointing=args.gradient_checkpointing,
-            evaluation_strategy=args.save_and_eval_strategy,
+            eval_strategy=args.save_and_eval_strategy,
             save_strategy=args.save_and_eval_strategy,
             eval_steps=args.save_and_eval_steps,
             save_steps=args.save_and_eval_steps,
