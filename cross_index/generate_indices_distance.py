@@ -11,7 +11,7 @@ from collections import defaultdict
 
 from torch.utils.data import DataLoader
 
-from datasets import EmbDataset, DualEmbDataset
+from datasets import EmbDataset, DualEmbDataset, TripleEmbDataset
 from models.rqvae import CrossRQVAE
 
 import os
@@ -20,6 +20,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Index")
     parser.add_argument('--text_data_path', type=str, default=None)
     parser.add_argument('--image_data_path', type=str, default=None)
+    parser.add_argument('--collab_data_path', type=str, default="",
+                        help="协同向量路径，非空时使用 TripleEmbDataset")
     parser.add_argument('--dataset', type=str, default=None)
     parser.add_argument('--ckpt_path', type=str, default=None)
     parser.add_argument('--output_dir', type=str, default=None)
@@ -75,7 +77,12 @@ state_dict = ckpt["state_dict"]
 cmd_args = parse_args()
 args.content = cmd_args.content
 
-data = DualEmbDataset(args.text_data_path,args.image_data_path)
+# 有 collab 路径时使用 TripleEmbDataset (归一化+拼接)
+collab_path = getattr(args, 'collab_data_path', '') or cmd_args.collab_data_path
+if collab_path:
+    data = TripleEmbDataset(args.text_data_path, args.image_data_path, collab_path)
+else:
+    data = DualEmbDataset(args.text_data_path, args.image_data_path)
 
 model = CrossRQVAE(text_in_dim=data.text_dim,
                   image_in_dim=data.img_dim,

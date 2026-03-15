@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import os
+from sklearn.preprocessing import normalize as l2_normalize
 
 class EmbDataset(data.Dataset):
 
@@ -102,6 +103,58 @@ class DualEmbDataset(data.Dataset):
 
     def __len__(self):
         return len(self.text_embeddings)
+    
+    @property
+    def text_dim(self):
+        return self._text_dim
+    
+    @property
+    def img_dim(self):
+        return self._img_dim
+
+
+class TripleEmbDataset(data.Dataset):
+    """
+    三路向量数据集: text + image + collab
+    
+    加载后对每路做 L2 归一化，然后将 collab 分别拼接到 text 和 image，
+    返回 (text_concat, image_concat, index)
+    """
+    
+    def __init__(self, text_data_path, img_data_path, collab_data_path):
+        # 加载原始向量
+        text_raw = np.load(text_data_path)
+        img_raw = np.load(img_data_path)
+        collab_raw = np.load(collab_data_path)
+        
+        assert len(text_raw) == len(img_raw) == len(collab_raw), \
+            f"三路向量数量必须一致: text={len(text_raw)}, image={len(img_raw)}, collab={len(collab_raw)}"
+        
+        # L2 归一化
+        text_norm = l2_normalize(text_raw, norm='l2', axis=1)
+        img_norm = l2_normalize(img_raw, norm='l2', axis=1)
+        collab_norm = l2_normalize(collab_raw, norm='l2', axis=1)
+        
+        # 拼接: text+collab, image+collab
+        self.text_concat = np.concatenate([text_norm, collab_norm], axis=1).astype(np.float32)
+        self.img_concat = np.concatenate([img_norm, collab_norm], axis=1).astype(np.float32)
+        
+        self._text_dim = self.text_concat.shape[-1]
+        self._img_dim = self.img_concat.shape[-1]
+        
+        print(f"TripleEmbDataset 已加载:")
+        print(f"  text  原始: {text_raw.shape} → 归一化+拼接collab → {self.text_concat.shape}")
+        print(f"  image 原始: {img_raw.shape} → 归一化+拼接collab → {self.img_concat.shape}")
+        print(f"  collab 原始: {collab_raw.shape} (归一化后拼接到两路)")
+        print(f"  样本数: {len(self.text_concat)}")
+
+    def __getitem__(self, index):
+        text_tensor = torch.FloatTensor(self.text_concat[index])
+        img_tensor = torch.FloatTensor(self.img_concat[index])
+        return text_tensor, img_tensor, index
+
+    def __len__(self):
+        return len(self.text_concat)
     
     @property
     def text_dim(self):

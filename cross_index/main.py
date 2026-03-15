@@ -7,7 +7,7 @@ import logging
 import json
 from torch.utils.data import DataLoader
 
-from datasets import EmbDataset, DualEmbDataset
+from datasets import EmbDataset, DualEmbDataset, TripleEmbDataset
 from models.rqvae import CrossRQVAE
 from trainer import  CrossTrainer
 
@@ -29,6 +29,8 @@ def parse_args():
     parser.add_argument("--image_data_path", type=str,
                         default="/datasets/datasets/LC-Rec_all/Instruments/Instruments.emb-llama-td.npy",
                         help="Input image data path.")
+    parser.add_argument("--collab_data_path", type=str, default="",
+                        help="协同向量路径 (.npy)，非空时使用 TripleEmbDataset 拼接 collab")
 
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='l2 regularization weight')
     parser.add_argument("--dropout_prob", type=float, default=0.0, help="dropout ratio")
@@ -103,7 +105,11 @@ if __name__ == '__main__':
     """build dataset"""
     print("use cross rq", args.use_cross_rq)
     print("begin cross layer", args.begin_cross_layer)
-    data = DualEmbDataset(args.text_data_path, args.image_data_path)
+    # 有 collab 路径时使用 TripleEmbDataset (归一化+拼接)，否则保持原始 DualEmbDataset
+    if args.collab_data_path:
+        data = TripleEmbDataset(args.text_data_path, args.image_data_path, args.collab_data_path)
+    else:
+        data = DualEmbDataset(args.text_data_path, args.image_data_path)
     model = CrossRQVAE(text_in_dim=data.text_dim,
                        image_in_dim=data.img_dim,
                   num_emb_list=args.num_emb_list,

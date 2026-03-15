@@ -12,8 +12,9 @@ python -u main.py \
   --num_emb_list 256 256 256 256 \
   --sk_epsilons 0.0 0.0 0.0 0.0 \
   --device cuda:0 \
-  --text_data_path ../data/$Datasets/$Datasets.emb-llama-td.npy \
+  --text_data_path ../data/$Datasets/$Datasets.emb-st-768.npy \
   --image_data_path ../data/$Datasets/$Datasets.emb-ViT-L-14.npy \
+  --collab_data_path ../data/$Datasets/$Datasets.emb-collab-256.npy \
   --ckpt_dir $OUTPUT_DIR \
   --eval_step 2 \
   --batch_size 2048 \
