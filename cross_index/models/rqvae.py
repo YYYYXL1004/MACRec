@@ -30,8 +30,16 @@ class CrossRQVAE(nn.Module):
                  text_contrast_weight=1.0,
                  image_contrast_weight=1.0,
                  recon_contrast_weight=0.001,
+                 collab_neighbor_info=None,
+                 collab_contrastive_weight=0.0,
+                 collab_on_text=True,
         ):
         super(CrossRQVAE, self).__init__()
+        # CAQ: 协同邻居表和正则化权重，对 text 和 image 两路同时做协同锚定
+        self.collab_neighbor_info = collab_neighbor_info
+        self.collab_contrastive_weight = collab_contrastive_weight
+        # 是否同时对 text 路启用 CAQ（默认启用）
+        self.collab_on_text = collab_on_text
 
         self.text_in_dim = text_in_dim
         self.image_in_dim = image_in_dim
@@ -154,7 +162,12 @@ class CrossRQVAE(nn.Module):
         image_align_in = self.image_align_encoder(image_x)
         text_x = self.text_encoder(text_align_in)
         image_x = self.image_encoder(image_align_in)
-        
+
+        # CAQ: 在 latent space (RQ 之前) 计算协同对比损失
+        collab_loss = torch.tensor(0.0, device=text_x.device)
+        if self.collab_contrastive_weight > 0 and item_index is not None:
+            collab_loss = self.collab_contrastive_loss(text_x, image_x, item_index)
+
         text_rq_loss = []
         image_rq_loss = []
         text_indices_list = []
@@ -206,8 +219,52 @@ class CrossRQVAE(nn.Module):
         image_out = self.image_align_decoder(image_align_out)
         share_out = (text_x_q, image_x_q)
 
-        return text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, share_out
+        return text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, share_out, collab_loss
 
+
+    def collab_contrastive_loss(self, text_latent, image_latent, item_index, temperature=0.1):
+        """
+        CAQ (Collaborative-Aware Quantization) 正则化损失:
+        在 encoder 输出的 latent space 上，拉近协同邻居的表征，
+        使 code space 感知协同结构。
+        text_latent / image_latent: (B, e_dim)  —— encoder 输出 (RQ 之前)
+        item_index: (B,)  —— batch 中每个样本的全局 item id
+        """
+        if self.collab_neighbor_info is None:
+            return torch.tensor(0.0, device=text_latent.device)
+
+        batch_size = text_latent.size(0)
+        # 全局 item_id → batch 内位置 的映射
+        idx_to_batch = {int(item_index[i]): i for i in range(batch_size)}
+
+        total_loss = torch.tensor(0.0, device=text_latent.device)
+        count = 0
+        latents = [image_latent] if not self.collab_on_text else [text_latent, image_latent]
+        for latent in latents:
+            feat = F.normalize(latent, dim=-1)
+            sim = torch.matmul(feat, feat.T) / temperature  # (B, B)
+
+            for i in range(batch_size):
+                item_id = int(item_index[i])
+                neighbors = self.collab_neighbor_info.get(item_id, [])
+                # 找 batch 内的协同邻居
+                pos_in_batch = [idx_to_batch[n] for n in neighbors
+                                if n in idx_to_batch and idx_to_batch[n] != i]
+                if not pos_in_batch:
+                    continue
+
+                pos_indices = torch.tensor(pos_in_batch, device=latent.device)
+                # InfoNCE: log( sum(exp(pos)) / sum(exp(all)) )
+                pos_logits = sim[i, pos_indices]
+                all_logits = sim[i]
+                total_loss += -torch.log(
+                    torch.exp(pos_logits).sum() / torch.exp(all_logits).sum()
+                )
+                count += 1
+
+        if count > 0:
+            total_loss = total_loss / count
+        return total_loss
 
     def text_image_recon_align(self, text_out, image_out, temperature=0.1):
 
@@ -219,7 +276,7 @@ class CrossRQVAE(nn.Module):
         loss = F.cross_entropy(sim_matrix, labels) + F.cross_entropy(sim_matrix.T, labels)
         return loss
     
-    def compute_loss(self, text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, text_xs, image_xs, share_out):
+    def compute_loss(self, text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, text_xs, image_xs, share_out, collab_loss=None):
         if self.loss_type == 'mse':
             loss_recon = F.mse_loss(text_out, text_xs, reduction='mean') + F.mse_loss(image_out, image_xs, reduction='mean')
         elif self.loss_type == 'l1':
@@ -228,6 +285,9 @@ class CrossRQVAE(nn.Module):
             raise ValueError('incompatible loss type')
         align_loss = self.text_image_recon_align(share_out[0], share_out[1])
         loss_total = loss_recon + self.quant_loss_weight * (text_rq_loss + image_rq_loss) + self.recon_contrast_weight * align_loss
+        # CAQ 协同正则化
+        if collab_loss is not None and self.collab_contrastive_weight > 0:
+            loss_total = loss_total + self.collab_contrastive_weight * collab_loss
         return loss_total, loss_recon
     
     @torch.no_grad()

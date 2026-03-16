@@ -302,8 +302,9 @@ class CrossTrainer(object):
             text_data = text_data.to(self.device)
             image_data = image_data.to(self.device)
             self.optimizer.zero_grad()
-            text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, share_out = self.model(text_data, image_data, item_index=index)
-            loss, loss_recon = self.model.compute_loss(text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, text_data, image_data, share_out)
+            text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, \
+                text_distances, image_distances, share_out, collab_loss = self.model(text_data, image_data, item_index=index)
+            loss, loss_recon = self.model.compute_loss(text_out, image_out, text_rq_loss, image_rq_loss, text_indices, image_indices, text_distances, image_distances, text_data, image_data, share_out, collab_loss=collab_loss)
             self._check_nan(loss)
             loss.backward()
             self.optimizer.step()

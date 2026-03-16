@@ -23,7 +23,7 @@ log
 *.bin
 *.ckpt
 *.safetensors
-
+*.pdf
 # 大 JSON（按需可收紧为具体文件名）
 # data/*/*.inter.json
 # data/*/*.item.json

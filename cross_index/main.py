@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import torch
 import numpy as np
@@ -29,8 +30,13 @@ def parse_args():
     parser.add_argument("--image_data_path", type=str,
                         default="/datasets/datasets/LC-Rec_all/Instruments/Instruments.emb-llama-td.npy",
                         help="Input image data path.")
-    parser.add_argument("--collab_data_path", type=str, default="",
-                        help="协同向量路径 (.npy)，非空时使用 TripleEmbDataset 拼接 collab")
+    # CAQ: 协同感知量化正则化
+    parser.add_argument("--collab_neighbor_info", type=str, default="",
+                        help="协同邻居 JSON 路径 (gen_collab_neighbors.py 生成)")
+    parser.add_argument("--collab_contrastive_weight", type=float, default=0.0,
+                        help="CAQ 协同对比正则化权重 (0 则不启用)")
+    parser.add_argument("--collab_on_text", action="store_true", default=True,
+                        help="CAQ 同时作用在 text 和 image 两路")
 
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='l2 regularization weight')
     parser.add_argument("--dropout_prob", type=float, default=0.0, help="dropout ratio")
@@ -71,7 +77,7 @@ def process_class_info(class_info):
         class_name = class_info[item][0]
         if class_name not in class2item_list:
             class2item_list[class_name] = []
-        class2item_list[class_name].append(item)
+        class2item_list[class_name].append(int(item))
     item2item_list = {}
     for item in class_info:
         item2item_list[int(item)] = class2item_list[class_info[item][0]]
@@ -105,11 +111,18 @@ if __name__ == '__main__':
     """build dataset"""
     print("use cross rq", args.use_cross_rq)
     print("begin cross layer", args.begin_cross_layer)
-    # 有 collab 路径时使用 TripleEmbDataset (归一化+拼接)，否则保持原始 DualEmbDataset
-    if args.collab_data_path:
-        data = TripleEmbDataset(args.text_data_path, args.image_data_path, args.collab_data_path)
-    else:
-        data = DualEmbDataset(args.text_data_path, args.image_data_path)
+    # CAQ: 使用纯 content 特征输入
+    data = DualEmbDataset(args.text_data_path, args.image_data_path)
+
+    # 加载协同邻居表 (CAQ)
+    collab_neighbor_info = None
+    if args.collab_neighbor_info and os.path.exists(args.collab_neighbor_info):
+        with open(args.collab_neighbor_info, 'r') as f:
+            raw = json.load(f)
+        # JSON key 是字符串，转成 int
+        collab_neighbor_info = {int(k): v for k, v in raw.items()}
+        print(f"[CAQ] 协同邻居表已加载: {len(collab_neighbor_info)} items, weight={args.collab_contrastive_weight}, on_text={args.collab_on_text}")
+
     model = CrossRQVAE(text_in_dim=data.text_dim,
                        image_in_dim=data.img_dim,
                   num_emb_list=args.num_emb_list,
@@ -126,7 +139,10 @@ if __name__ == '__main__':
                   use_cross_rq=args.use_cross_rq,
                   begin_cross_layer=args.begin_cross_layer,
                   text_class_info=text_class_info,
-                  image_class_info=image_class_info
+                  image_class_info=image_class_info,
+                  collab_neighbor_info=collab_neighbor_info,
+                  collab_contrastive_weight=args.collab_contrastive_weight,
+                  collab_on_text=args.collab_on_text,
                   )
     print(model)
     data_loader = DataLoader(data,num_workers=args.num_workers,

@@ -8,9 +8,8 @@ for model_name in $name; do
   echo "Processing $model_name"
   python -u generate_indices_distance.py \
     --dataset $Dataset \
-    --text_data_path ../data/$Dataset/$Dataset.emb-st-768.npy \
+    --text_data_path ../data/$Dataset/$Dataset.emb-llama-td.npy \
     --image_data_path ../data/$Dataset/$Dataset.emb-ViT-L-14.npy \
-    --collab_data_path ../data/$Dataset/$Dataset.emb-collab-256.npy \
     --device cuda:0 \
     --ckpt_path log/$Dataset/$model_name/best_text_collision_model.pth \
     --output_dir $OUTPUT_DIR \
@@ -18,9 +17,8 @@ for model_name in $name; do
     --content text
   python -u generate_indices_distance.py \
       --dataset $Dataset \
-      --text_data_path ../data/$Dataset/$Dataset.emb-st-768.npy \
+      --text_data_path ../data/$Dataset/$Dataset.emb-llama-td.npy \
       --image_data_path ../data/$Dataset/$Dataset.emb-ViT-L-14.npy \
-      --collab_data_path ../data/$Dataset/$Dataset.emb-collab-256.npy \
       --device cuda:0 \
       --ckpt_path log/$Dataset/$model_name/best_image_collision_model.pth \
       --output_dir $OUTPUT_DIR \

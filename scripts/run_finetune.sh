@@ -1,7 +1,7 @@
 #!/bin/bash
-gpu_ids=(3 4)
+gpu_ids=(1 2)
 names=(
-Inst3.15
+caq2.0-0.1
 )
 
 datasets=(

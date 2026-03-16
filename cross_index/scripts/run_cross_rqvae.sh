@@ -5,6 +5,7 @@ Datasets=$3
 text_contrast_weight=$4
 image_contrast_weight=$5
 recon_contrast_weight=$6
+collab_contrastive_weight=${7:-0.0}
 OUTPUT_DIR=log/$Datasets/${save_name}
 mkdir -p $OUTPUT_DIR
 
@@ -12,9 +13,8 @@ python -u main.py \
   --num_emb_list 256 256 256 256 \
   --sk_epsilons 0.0 0.0 0.0 0.0 \
   --device cuda:0 \
-  --text_data_path ../data/$Datasets/$Datasets.emb-st-768.npy \
+  --text_data_path ../data/$Datasets/$Datasets.emb-llama-td.npy \
   --image_data_path ../data/$Datasets/$Datasets.emb-ViT-L-14.npy \
-  --collab_data_path ../data/$Datasets/$Datasets.emb-collab-256.npy \
   --ckpt_dir $OUTPUT_DIR \
   --eval_step 2 \
   --batch_size 2048 \
@@ -25,4 +25,6 @@ python -u main.py \
   --text_contrast_weight $text_contrast_weight \
   --image_contrast_weight $image_contrast_weight \
   --recon_contrast_weight $recon_contrast_weight \
+  --collab_neighbor_info ../data/$Datasets/$Datasets.collab_neighbors_k10.json \
+  --collab_contrastive_weight $collab_contrastive_weight \
   --epochs 1000 > $OUTPUT_DIR/train.log

@@ -233,7 +233,6 @@ class SeqRecDataset(BaseDataset):
                 items = self.remapped_inters[uid][:-2]
                 for i in range(1, len(items)):
                     one_data = dict()
-                    # one_data["user"] = uid
                     one_data["item"] = items[i]
                     history = items[:i]
                     if self.max_his_len > 0:
@@ -484,12 +483,12 @@ class FusionSeqRecDataset(BaseDataset):
                     history = history[-self.max_his_len:]
                 
                 if self.task == 'seqitem2image':
-                    history = ["".join(self.indices[str(i)]) for i in history]
+                    history = ["".join(self.indices[str(h)]) for h in history]
                     one_data["inters"] = ''.join(history)
                     one_data["item"] = ''.join(self.image_indices[str(item)])
                     
                 elif self.task == 'seqimage2item':
-                    history = ["".join(self.image_indices[str(i)]) for i in history]
+                    history = ["".join(self.image_indices[str(h)]) for h in history]
                     one_data["inters"] = ''.join(history)
                     one_data["item"] = ''.join(self.indices[str(item)])
                 else:

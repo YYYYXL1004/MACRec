@@ -12,12 +12,13 @@ from torch.nn.parallel import DistributedDataParallel
 # from peft import PeftModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import T5Tokenizer, T5ForConditionalGeneration
+from transformers import T5Tokenizer, T5Config, T5ForConditionalGeneration
 
 from utils import *
 from collator import TestCollator, TestCollatorSave
 from evaluate import get_topk_results, get_metrics_results
 from generation_trie import Trie
+from modeling import CrossModalContrastive
 
 def gather_list(target, world_size):
     
@@ -48,8 +49,10 @@ def test_ddp(args):
 
 
     tokenizer = T5Tokenizer.from_pretrained(args.ckpt_path)
-    model = T5ForConditionalGeneration.from_pretrained(
+    config = T5Config.from_pretrained(args.ckpt_path)
+    model = CrossModalContrastive.from_pretrained(
         args.ckpt_path,
+        config=config,
         low_cpu_mem_usage=True,
         device_map=device_map,
     )
@@ -138,13 +141,11 @@ def test_ddp(args):
                 output = tokenizer.batch_decode(
                     output_ids, skip_special_tokens=True
                 )
-                
-                # print(len(output))
-                # print(scores.shape)
-                # print(len(targets))
-                
+
+                scores = scores.cpu().tolist()
+
                 output = gather_list(output, world_size)
-                scores = gather_list(scores.cpu().tolist(), world_size)
+                scores = gather_list(scores, world_size)
                 targets = gather_list(targets, world_size)
                 users = gather_list(users, world_size)
                 
@@ -255,7 +256,6 @@ if __name__ == "__main__":
     parser = parse_global_args(parser)
     parser = parse_dataset_args(parser)
     parser = parse_test_args(parser)
-
     args = parser.parse_args()
 
     test_ddp(args)

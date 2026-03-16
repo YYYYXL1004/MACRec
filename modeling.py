@@ -79,6 +79,9 @@ class CrossModalContrastive(T5ForConditionalGeneration):
         if is_contrastive_task and text_embeddings is not None and image_embeddings is not None:
             batch_size = text_embeddings.size(0)
             contrastive_loss = self.contrastive_loss(text_embeddings, image_embeddings, batch_size)
+        # 推理时 labels=None，loss 为 None，直接跳过
+        if loss is None:
+            return None
         total_loss = loss + self.contrastive_weight * contrastive_loss
         return total_loss
 
@@ -103,7 +106,7 @@ class CrossModalContrastive(T5ForConditionalGeneration):
         return_dict=None,
         reduce_loss=False,
         return_hidden_state=False,
-        task_flag=None, 
+        task_flag=None,
         **kwargs,
     ):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
@@ -113,8 +116,9 @@ class CrossModalContrastive(T5ForConditionalGeneration):
             if self.config.num_layers == self.config.num_decoder_layers:
                 decoder_head_mask = head_mask
 
-        mask = (task_flag == 1)
-        if mask is not None:
+        # generate() 调用 forward 时不传 task_flag，需要守卫
+        if task_flag is not None:
+            mask = (task_flag == 1)
             contrastive_ids = input_ids[mask]
             contrastive_attention_mask = attention_mask[mask]
         else:
@@ -144,7 +148,7 @@ class CrossModalContrastive(T5ForConditionalGeneration):
         model_a_embeddings  = None
         model_b_embeddings = None
         
-        if  contrastive_ids.shape[0] > 0:
+        if contrastive_ids is not None and contrastive_ids.shape[0] > 0:
             threshold = 32100
             eos_token_id = 1
 
