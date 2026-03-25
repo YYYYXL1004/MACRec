@@ -11,7 +11,7 @@ from collections import defaultdict
 
 from torch.utils.data import DataLoader
 
-from datasets import EmbDataset, DualEmbDataset
+from datasets import EmbDataset, DualEmbDataset, TripleEmbDataset
 from models.rqvae import CrossRQVAE
 
 import os
@@ -75,8 +75,24 @@ state_dict = ckpt["state_dict"]
 cmd_args = parse_args()
 args.content = cmd_args.content
 
-# CAQ: 纯 content 输入，不拼接 collab
-data = DualEmbDataset(args.text_data_path, args.image_data_path)
+# 根据训练时的配置选择数据集和模型参数
+collab_data_path = getattr(args, 'collab_data_path', '')
+collab_fusion = getattr(args, 'collab_fusion', 'concat')
+collab_dim = 0
+
+if collab_data_path and os.path.exists(collab_data_path) and collab_fusion == "concat":
+    # 拼接模式: 必须和训练时一样用拼接后的输入
+    data = TripleEmbDataset(args.text_data_path, args.image_data_path, collab_data_path)
+    print(f"[生成code-拼接模式] text_dim={data.text_dim}, img_dim={data.img_dim}")
+elif collab_data_path and os.path.exists(collab_data_path) and collab_fusion == "proj_add":
+    # 投影加法: 数据还是双路，collab 通过模型内投影层处理
+    data = DualEmbDataset(args.text_data_path, args.image_data_path)
+    collab_emb = np.load(collab_data_path)
+    collab_dim = collab_emb.shape[-1]
+    print(f"[生成code-投影加法] collab_dim={collab_dim}")
+else:
+    data = DualEmbDataset(args.text_data_path, args.image_data_path)
+    print("[生成code] 纯 content 输入")
 
 model = CrossRQVAE(text_in_dim=data.text_dim,
                   image_in_dim=data.img_dim,
@@ -93,9 +109,13 @@ model = CrossRQVAE(text_in_dim=data.text_dim,
                   sk_iters=args.sk_iters,
                   use_cross_rq=args.use_cross_rq,
                   begin_cross_layer=args.begin_cross_layer,
+                  collab_dim=collab_dim,
                   )
 
 model.load_state_dict(state_dict)
+# 投影加法: 注册 collab embedding 查找表
+if collab_dim > 0:
+    model.register_collab_embeddings(torch.FloatTensor(collab_emb))
 model = model.to(device)
 model.eval()
 print(model)
@@ -109,10 +129,13 @@ all_indices_str = []
 all_distances = [[] for i in range(len(args.num_emb_list))]
 all_indices_str_set = set()
 
-for batch_idx, (text_d,img_d,_) in tqdm(enumerate(data_loader)):
+item_offset = 0
+for batch_idx, (text_d,img_d,batch_idx_tensor) in tqdm(enumerate(data_loader)):
     text_d = text_d.to(device)
     img_d = img_d.to(device)
-    text_indices, image_indices, text_distances, image_distances = model.get_indices(text_d, img_d, use_sk=False)
+    # 投影加法模式需要 item_index 来查 collab embedding
+    cur_item_index = batch_idx_tensor if collab_dim > 0 else None
+    text_indices, image_indices, text_distances, image_distances = model.get_indices(text_d, img_d, use_sk=False, item_index=cur_item_index)
     if args.content == 'image':
         indices = image_indices
         distances = image_distances

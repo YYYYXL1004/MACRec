@@ -33,13 +33,20 @@ class CrossRQVAE(nn.Module):
                  collab_neighbor_info=None,
                  collab_contrastive_weight=0.0,
                  collab_on_text=True,
+                 collab_dim=0,
         ):
         super(CrossRQVAE, self).__init__()
-        # CAQ: 协同邻居表和正则化权重，对 text 和 image 两路同时做协同锚定
+        # CAQ: 协同邻居表和正则化权重
         self.collab_neighbor_info = collab_neighbor_info
         self.collab_contrastive_weight = collab_contrastive_weight
-        # 是否同时对 text 路启用 CAQ（默认启用）
         self.collab_on_text = collab_on_text
+
+        # 投影加法: collab_dim > 0 时启用，将 collab 投影到 align_dim 后加到 align 输出上
+        self.collab_dim = collab_dim
+        self._collab_embeddings = None
+        if collab_dim > 0:
+            self.text_collab_proj = nn.Linear(collab_dim, 768)
+            self.image_collab_proj = nn.Linear(collab_dim, 768)
 
         self.text_in_dim = text_in_dim
         self.image_in_dim = image_in_dim
@@ -157,9 +164,20 @@ class CrossRQVAE(nn.Module):
 
         return text_x_res, text_loss, text_indices, text_distances, image_x_res, image_loss, image_indices, image_distances
 
+    def register_collab_embeddings(self, collab_emb_tensor):
+        """注册 collab embedding 查找表 (投影加法模式用)"""
+        self._collab_embeddings = collab_emb_tensor
+
     def forward(self, text_x, image_x, item_index=None, use_sk=True):
         text_align_in = self.text_align_encoder(text_x)
         image_align_in = self.image_align_encoder(image_x)
+
+        # 投影加法: 在 align 空间中加入 collab 信号
+        if self.collab_dim > 0 and item_index is not None and self._collab_embeddings is not None:
+            collab_x = self._collab_embeddings[item_index].to(text_align_in.device)
+            text_align_in = text_align_in + self.text_collab_proj(collab_x)
+            image_align_in = image_align_in + self.image_collab_proj(collab_x)
+
         text_x = self.text_encoder(text_align_in)
         image_x = self.image_encoder(image_align_in)
 
@@ -291,9 +309,16 @@ class CrossRQVAE(nn.Module):
         return loss_total, loss_recon
     
     @torch.no_grad()
-    def get_indices(self, text_xs, image_xs, use_sk=False):
+    def get_indices(self, text_xs, image_xs, use_sk=False, item_index=None):
         text_align_in = self.text_align_encoder(text_xs)
         image_align_in = self.image_align_encoder(image_xs)
+
+        # 投影加法: 生成 code 时也要加 collab 信号
+        if self.collab_dim > 0 and item_index is not None and self._collab_embeddings is not None:
+            collab_x = self._collab_embeddings[item_index].to(text_align_in.device)
+            text_align_in = text_align_in + self.text_collab_proj(collab_x)
+            image_align_in = image_align_in + self.image_collab_proj(collab_x)
+
         text_x_e = self.text_encoder(text_align_in)
         image_x_e = self.image_encoder(image_align_in)
         residual_text_x = text_x_e

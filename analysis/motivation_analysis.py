@@ -385,14 +385,16 @@ def analysis_fig1_content_vs_collab(text_norm, image_norm, collab_norm, args):
         items_meta = json.load(f)
 
     brands = {}
-    categories = {}
+    categories_l3 = {}
     for k, v in items_meta.items():
         idx = int(k)
         if idx >= text_norm.shape[0]:
             continue
         brands[idx] = v.get('brand', '')
         raw_cats = v.get('categories', '').replace('&amp;', '&').split(',')
-        categories[idx] = raw_cats[1].strip() if len(raw_cats) >= 2 else raw_cats[0].strip()
+        raw_cats = [c.strip() for c in raw_cats]
+        # 使用三级类别（更细粒度，image/collab 对比更明显）
+        categories_l3[idx] = raw_cats[2] if len(raw_cats) >= 3 else (raw_cats[1] if len(raw_cats) >= 2 else raw_cats[0])
 
     # --- 2. 筛选品牌 item ---
     target_brands = ['Behringer', 'JIM DUNLOP', 'Fender']
@@ -409,18 +411,30 @@ def analysis_fig1_content_vs_collab(text_norm, image_norm, collab_norm, args):
     brand_labels = np.array(brand_labels)
     print(f"品牌 items: {len(brand_indices)} ({', '.join(f'{b}={int((brand_labels==b).sum())}' for b in target_brands)})")
 
-    # --- 3. 筛选类别 item ---
-    target_cats = ['Guitars', 'Amplifiers & Effects', 'Microphones & Accessories']
-    cat_colors = {'Guitars': '#1F77B4', 'Amplifiers & Effects': '#FF7F0E', 'Microphones & Accessories': '#D62728'}
-    cat_alias = {'Guitars': 'Category A', 'Amplifiers & Effects': 'Category B', 'Microphones & Accessories': 'Category C'}
-    cat_short = {'Guitars': 'Guitars', 'Amplifiers & Effects': 'Amplifiers', 'Microphones & Accessories': 'Microphones'}
+    # --- 3. 筛选类别 item (三级类别, image/collab gap 最大的组合) ---
+    target_cats = ['Electric Guitars', 'Guitar & Bass Amplifiers', 'Stage & Studio Cables']
+    cat_colors = {
+        'Electric Guitars': '#1F77B4',
+        'Guitar & Bass Amplifiers': '#FF7F0E',
+        'Stage & Studio Cables': '#D62728',
+    }
+    cat_alias = {
+        'Electric Guitars': 'Category A',
+        'Guitar & Bass Amplifiers': 'Category B',
+        'Stage & Studio Cables': 'Category C',
+    }
+    cat_short = {
+        'Electric Guitars': 'Electric Guitars',
+        'Guitar & Bass Amplifiers': 'Amplifiers',
+        'Stage & Studio Cables': 'Cables',
+    }
 
     cat_indices = []
     cat_labels = []
-    for idx in sorted(categories.keys()):
-        if categories[idx] in target_cats:
+    for idx in sorted(categories_l3.keys()):
+        if categories_l3[idx] in target_cats:
             cat_indices.append(idx)
-            cat_labels.append(categories[idx])
+            cat_labels.append(categories_l3[idx])
     cat_indices = np.array(cat_indices)
     cat_labels = np.array(cat_labels)
     print(f"类别 items: {len(cat_indices)} ({', '.join(f'{cat_short[c]}={int((cat_labels==c).sum())}' for c in target_cats)})")
@@ -437,12 +451,30 @@ def analysis_fig1_content_vs_collab(text_norm, image_norm, collab_norm, args):
     print("t-SNE: collab (categories)...")
     collab_cat_2d = TSNE(**tsne_kw).fit_transform(collab_norm[cat_indices])
 
-    # --- 5. 绘图 2×2 ---
-    fig, axes = plt.subplots(2, 2, figsize=(8, 7.5))
+    # --- 5. 分别生成 4 张独立子图, 由 LaTeX subfloat 组装 ---
+    paper_dir = os.path.join(os.path.dirname(args.data_dir), '..', 'paper')
+    paper_dir = os.path.normpath(paper_dir)
+    os.makedirs(paper_dir, exist_ok=True)
 
-    def _draw_panel(ax, emb_2d, labels, groups, color_map, alias_map, short_map,
-                    draw_ellipse=True):
-        """在 ax 上画散点 + 可选椭圆标注"""
+    from sklearn.cluster import DBSCAN
+    from collections import Counter
+
+    def _make_square(ax, emb_2d, margin=0.06):
+        """用百分位数确定范围, 减少离群点导致的留白, 保持正方形"""
+        xlo, xhi = np.percentile(emb_2d[:, 0], [1, 99])
+        ylo, yhi = np.percentile(emb_2d[:, 1], [1, 99])
+        span = max(xhi - xlo, yhi - ylo)
+        pad = span * margin
+        cx, cy = (xlo + xhi) / 2, (ylo + yhi) / 2
+        half = span / 2 + pad
+        ax.set_xlim(cx - half, cx + half)
+        ax.set_ylim(cy - half, cy + half)
+        ax.set_aspect('equal')
+
+    def _save_single_panel(emb_2d, labels, groups, color_map, short_map,
+                           draw_ellipse, filename):
+        """生成并保存单个子图（无 xlabel, 由 LaTeX subcaption 控制标题）"""
+        fig, ax = plt.subplots(figsize=(4, 4))
         for g in groups:
             mask = labels == g
             ax.scatter(
@@ -451,11 +483,17 @@ def analysis_fig1_content_vs_collab(text_norm, image_norm, collab_norm, args):
                 label=short_map[g] if short_map else g,
                 edgecolors='none'
             )
-        # 椭圆标注 (仅 content 面板)
+        _make_square(ax, emb_2d)
         if draw_ellipse:
             for g in groups:
                 mask = labels == g
                 pts = emb_2d[mask]
+                db = DBSCAN(eps=5.0, min_samples=5).fit(pts)
+                db_labels = db.labels_
+                valid = db_labels[db_labels >= 0]
+                if len(valid) > 0:
+                    biggest = Counter(valid).most_common(1)[0][0]
+                    pts = pts[db_labels == biggest]
                 result = _fit_cluster_ellipse(pts, n_std=2.0)
                 if result is None:
                     continue
@@ -466,58 +504,32 @@ def analysis_fig1_content_vs_collab(text_norm, image_norm, collab_norm, args):
                     linestyle='--', zorder=8
                 )
                 ax.add_patch(ell)
-                ax.text(
-                    center[0], center[1] + h * 0.6,
-                    alias_map[g], fontsize=13, fontweight='bold',
-                    ha='center', va='bottom', color='black', zorder=10
-                )
         ax.legend(loc='upper left', fontsize=9, frameon=True,
-                  fancybox=True, framealpha=0.9, markerscale=1.5)
+                  fancybox=True, framealpha=0.9, markerscale=1.3)
+        ax.tick_params(axis='both', which='major', labelsize=9)
+        plt.tight_layout(pad=0.3)
+        for ext in ['pdf', 'png']:
+            out = os.path.join(paper_dir, f'{filename}.{ext}')
+            fig.savefig(out, bbox_inches='tight', pad_inches=0.02)
+        print(f"已保存: {filename}.pdf / .png")
+        plt.close(fig)
 
     # (a) Text by brand
-    _draw_panel(axes[0, 0], text_brand_2d, brand_labels, target_brands,
-                brand_colors, brand_alias, {b: b for b in target_brands},
-                draw_ellipse=True)
-    axes[0, 0].set_xlabel('Text Embeddings', fontsize=12, fontweight='bold')
-
-    # (b) Collab by brand — 品牌在协同空间中混杂
-    _draw_panel(axes[0, 1], collab_brand_2d, brand_labels, target_brands,
-                brand_colors, brand_alias, {b: b for b in target_brands},
-                draw_ellipse=False)
-    axes[0, 1].set_xlabel('Collaborative Embeddings', fontsize=12, fontweight='bold')
-
+    _save_single_panel(text_brand_2d, brand_labels, target_brands,
+                       brand_colors, {b: b for b in target_brands},
+                       draw_ellipse=True, filename='fig1_a')
+    # (b) Collab by brand
+    _save_single_panel(collab_brand_2d, brand_labels, target_brands,
+                       brand_colors, {b: b for b in target_brands},
+                       draw_ellipse=False, filename='fig1_b')
     # (c) Image by category
-    _draw_panel(axes[1, 0], image_cat_2d, cat_labels, target_cats,
-                cat_colors, cat_alias, cat_short,
-                draw_ellipse=True)
-    axes[1, 0].set_xlabel('Image Embeddings', fontsize=12, fontweight='bold')
-
-    # (d) Collab by category — 类别在协同空间中混杂
-    _draw_panel(axes[1, 1], collab_cat_2d, cat_labels, target_cats,
-                cat_colors, cat_alias, cat_short,
-                draw_ellipse=False)
-    axes[1, 1].set_xlabel('Collaborative Embeddings', fontsize=12, fontweight='bold')
-
-    # 统一样式
-    for ax in axes.flat:
-        ax.tick_params(axis='both', which='major', labelsize=9)
-
-    plt.tight_layout(h_pad=1.5, w_pad=1.0)
-
-    # --- 保存 ---
-    paper_dir = os.path.join(os.path.dirname(args.data_dir), '..', 'paper')
-    paper_dir = os.path.normpath(paper_dir)
-    os.makedirs(paper_dir, exist_ok=True)
-
-    for ext in ['pdf', 'png']:
-        out_path = os.path.join(paper_dir, f'fig1_content_vs_collab.{ext}')
-        fig.savefig(out_path)
-        print(f"已保存: {out_path}")
-
-    out_path_analysis = os.path.join(args.output_dir, 'fig1_content_vs_collab.pdf')
-    fig.savefig(out_path_analysis)
-    print(f"已保存: {out_path_analysis}")
-    plt.close(fig)
+    _save_single_panel(image_cat_2d, cat_labels, target_cats,
+                       cat_colors, cat_short,
+                       draw_ellipse=True, filename='fig1_c')
+    # (d) Collab by category
+    _save_single_panel(collab_cat_2d, cat_labels, target_cats,
+                       cat_colors, cat_short,
+                       draw_ellipse=False, filename='fig1_d')
 
 
 def main():

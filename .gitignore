@@ -31,7 +31,8 @@ log
 # 模型与缓存
 cache_models/
 *.onnx
-
+.pipeline_*/
+analysis/motivation_analysis.py
 # Python
 data_process/__pycache__/
 __pycache__/

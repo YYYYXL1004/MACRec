@@ -37,6 +37,12 @@ def parse_args():
                         help="CAQ 协同对比正则化权重 (0 则不启用)")
     parser.add_argument("--collab_on_text", action="store_true", default=True,
                         help="CAQ 同时作用在 text 和 image 两路")
+    # 协同锚定: 拼接或投影加法
+    parser.add_argument("--collab_data_path", type=str, default="",
+                        help="collab embedding 路径, 非空时启用协同锚定 (拼接到 RQVAE 输入)")
+    parser.add_argument("--collab_fusion", type=str, default="concat",
+                        choices=["concat", "proj_add"],
+                        help="collab 融合方式: concat=拼接, proj_add=投影加法")
 
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='l2 regularization weight')
     parser.add_argument("--dropout_prob", type=float, default=0.0, help="dropout ratio")
@@ -111,15 +117,29 @@ if __name__ == '__main__':
     """build dataset"""
     print("use cross rq", args.use_cross_rq)
     print("begin cross layer", args.begin_cross_layer)
-    # CAQ: 使用纯 content 特征输入
-    data = DualEmbDataset(args.text_data_path, args.image_data_path)
+
+    # 根据是否有 collab_data_path 以及融合方式选择数据集
+    collab_dim = 0
+    if args.collab_data_path and os.path.exists(args.collab_data_path):
+        if args.collab_fusion == "concat":
+            # 拼接方式: collab 归一化后拼接到 text/image，维度变大
+            data = TripleEmbDataset(args.text_data_path, args.image_data_path, args.collab_data_path)
+            print(f"[协同锚定-拼接] text_dim={data.text_dim}, img_dim={data.img_dim}")
+        else:
+            # 投影加法: 数据还是双路，collab 单独加载交给模型处理
+            data = DualEmbDataset(args.text_data_path, args.image_data_path)
+            collab_emb = np.load(args.collab_data_path)
+            collab_dim = collab_emb.shape[-1]
+            print(f"[协同锚定-投影加法] collab_dim={collab_dim}, text_dim={data.text_dim}, img_dim={data.img_dim}")
+    else:
+        data = DualEmbDataset(args.text_data_path, args.image_data_path)
+        print("[无协同锚定] 使用纯 content 特征输入")
 
     # 加载协同邻居表 (CAQ)
     collab_neighbor_info = None
     if args.collab_neighbor_info and os.path.exists(args.collab_neighbor_info):
         with open(args.collab_neighbor_info, 'r') as f:
             raw = json.load(f)
-        # JSON key 是字符串，转成 int
         collab_neighbor_info = {int(k): v for k, v in raw.items()}
         print(f"[CAQ] 协同邻居表已加载: {len(collab_neighbor_info)} items, weight={args.collab_contrastive_weight}, on_text={args.collab_on_text}")
 
@@ -143,7 +163,13 @@ if __name__ == '__main__':
                   collab_neighbor_info=collab_neighbor_info,
                   collab_contrastive_weight=args.collab_contrastive_weight,
                   collab_on_text=args.collab_on_text,
+                  collab_dim=collab_dim,
                   )
+    # 投影加法: 将 collab embedding 注册到模型中，训练时按 index 查找
+    if collab_dim > 0:
+        model.register_collab_embeddings(torch.FloatTensor(collab_emb))
+        print(f"[投影加法] collab embeddings 已注册到模型: shape={collab_emb.shape}")
+
     print(model)
     data_loader = DataLoader(data,num_workers=args.num_workers,
                              batch_size=args.batch_size, shuffle=True,
