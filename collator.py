@@ -45,6 +45,9 @@ class Collator(object):
         if "task_flag" in batch[0]:
             task_flags = torch.tensor([d["task_flag"] for d in batch])
             inputs['task_flag'] = task_flags
+        if "target_item_id" in batch[0]:
+            target_item_ids = torch.tensor([d["target_item_id"] for d in batch], dtype=torch.long)
+            inputs['target_item_id'] = target_item_ids
         return inputs
 
 

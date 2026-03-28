@@ -101,6 +101,15 @@ def parse_train_args(parser):
     
     parser.add_argument("--valid_task", type=str, default="SeqRec")
 
+    # 轻量 CPA 相关参数
+    parser.add_argument("--cpa_weight", type=float, default=0.0,
+                        help="轻量CPA loss权重，0表示不启用")
+    parser.add_argument("--collab_emb_path", type=str, default=None,
+                        help="SASRec协同嵌入npy文件路径")
+    parser.add_argument("--cpa_loss_type", type=str, default="cosine",
+                        choices=["cosine", "mse"],
+                        help="CPA loss类型: cosine或mse")
+
     return parser
 
 def parse_test_args(parser):

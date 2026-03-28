@@ -16,9 +16,15 @@ from torch.nn import CrossEntropyLoss
 import ipdb
 from transformers.modeling_outputs import ModelOutput, BaseModelOutput, BaseModelOutputWithPast, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqLMOutput, Seq2SeqModelOutput
 from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
+try:
+    from transformers.pytorch_utils import find_pruneable_heads_and_indices, prune_linear_layer
+except ImportError:
+    from transformers.pytorch_utils import prune_linear_layer
 from transformers.utils import logging
-from transformers.generation.beam_search import BeamScorer, BeamSearchScorer
+try:
+    from transformers.generation.beam_search import BeamScorer, BeamSearchScorer
+except ImportError:
+    pass
 
 def sigmoid(x):
     return 1 / (1 + torch.exp(-x))
@@ -28,15 +34,62 @@ def create_contrastive_model(config):
 class baseT5(T5ForConditionalGeneration):
     def __init__(self, config: T5Config):
         super().__init__(config)
+        if not hasattr(self, 'model_parallel'):
+            self.model_parallel = False
 
 class CrossModalContrastive(T5ForConditionalGeneration):
 
     def __init__(self, config: T5Config):
         super().__init__(config)
 
+        # 兼容新版 transformers，model_parallel 属性不再自动存在
+        if not hasattr(self, 'model_parallel'):
+            self.model_parallel = False
 
         self.temperature = 0.1
         self.contrastive_weight = 0.01  
+        # 轻量 CPA 相关属性，调用 init_lightweight_cpa 后激活
+        self.cpa_weight = 0.0
+        self.cpa_loss_type = 'cosine'
+
+    def init_lightweight_cpa(self, collab_emb_np, cpa_weight=0.01, cpa_loss_type='cosine'):
+        """初始化轻量 CPA: 用小adapter将decoder BOS投影到SASRec协同嵌入空间"""
+        self.cpa_weight = cpa_weight
+        self.cpa_loss_type = cpa_loss_type
+        collab_dim = collab_emb_np.shape[1]
+        # 128d → 256d，维度膨胀仅2倍
+        self.cpa_adapter = nn.Linear(self.config.d_model, collab_dim)
+        self.collab_embeddings = nn.Embedding.from_pretrained(
+            torch.FloatTensor(collab_emb_np), freeze=True
+        )
+        print(f"[Lightweight CPA] d_model={self.config.d_model} → collab_dim={collab_dim}, "
+              f"loss={cpa_loss_type}, weight={cpa_weight}, n_items={collab_emb_np.shape[0]}")
+
+    def compute_lightweight_cpa_loss(self, decoder_hidden, target_item_ids):
+        """计算轻量 CPA loss: 逐样本cosine/mse，不需要负样本"""
+        valid_mask = target_item_ids >= 0
+        if valid_mask.sum() == 0:
+            return torch.tensor(0.0, device=decoder_hidden.device, dtype=decoder_hidden.dtype)
+        
+        # decoder BOS位置的隐状态作为用户表征
+        decoder_bos = decoder_hidden[valid_mask, 0, :]
+        valid_ids = target_item_ids[valid_mask]
+        
+        # 投影到协同嵌入空间
+        user_repr = self.cpa_adapter(decoder_bos)
+        target_emb = self.collab_embeddings(valid_ids)
+        
+        if self.cpa_loss_type == 'cosine':
+            loss = (1.0 - F.cosine_similarity(user_repr, target_emb)).mean()
+        elif self.cpa_loss_type == 'mse':
+            # 归一化后做MSE，避免尺度问题
+            user_repr_norm = F.normalize(user_repr, dim=-1)
+            target_emb_norm = F.normalize(target_emb, dim=-1)
+            loss = F.mse_loss(user_repr_norm, target_emb_norm)
+        else:
+            raise ValueError(f"Unknown CPA loss type: {self.cpa_loss_type}")
+        
+        return loss
 
     def get_encoder_embeddings(self, input_ids, attention_mask=None):
 
@@ -107,6 +160,7 @@ class CrossModalContrastive(T5ForConditionalGeneration):
         reduce_loss=False,
         return_hidden_state=False,
         task_flag=None,
+        target_item_id=None,
         **kwargs,
     ):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
@@ -236,6 +290,10 @@ class CrossModalContrastive(T5ForConditionalGeneration):
             is_contrastive_task, model_a_embeddings, model_b_embeddings
         )
 
+        # 轻量 CPA loss: 将decoder BOS表征对齐到SASRec协同嵌入空间
+        if loss is not None and self.cpa_weight > 0 and target_item_id is not None:
+            cpa_loss = self.compute_lightweight_cpa_loss(sequence_output, target_item_id)
+            loss = loss + self.cpa_weight * cpa_loss
 
         if not return_dict:
             output = (lm_logits,) + decoder_outputs[1:] + encoder_outputs

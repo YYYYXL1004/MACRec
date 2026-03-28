@@ -231,9 +231,11 @@ class SeqRecDataset(BaseDataset):
         if self.train_data_mode == 0: ## origin, for encoder-decoder
             for uid  in self.remapped_inters:
                 items = self.remapped_inters[uid][:-2]
+                orig_ids = self.inters[uid][:-2]
                 for i in range(1, len(items)):
                     one_data = dict()
                     one_data["item"] = items[i]
+                    one_data["target_item_id"] = int(orig_ids[i])
                     history = items[:i]
                     if self.max_his_len > 0:
                         history = history[-self.max_his_len:]
@@ -244,10 +246,12 @@ class SeqRecDataset(BaseDataset):
         elif self.train_data_mode == 1:  ## all max length
             for uid  in self.remapped_inters:
                 items = self.remapped_inters[uid][:-2]
+                orig_ids = self.inters[uid][:-2]
 
                 if len(items) <= self.max_his_len + 1:
                     one_data = dict()
                     one_data["item"] = items[-1]
+                    one_data["target_item_id"] = int(orig_ids[-1])
                     history = items[:-1]
                     one_data["inters"] = history
                     inter_data.append(one_data)
@@ -255,6 +259,7 @@ class SeqRecDataset(BaseDataset):
                     for i in range(self.max_his_len + 1, len(items)):
                         one_data = dict()
                         one_data["item"] = items[i]
+                        one_data["target_item_id"] = int(orig_ids[i])
                         history = items[:i]
                         history = history[-self.max_his_len:]
                         one_data["inters"] = history
@@ -274,6 +279,7 @@ class SeqRecDataset(BaseDataset):
             one_data = dict()
             # one_data["user"] = uid
             one_data["item"] = items[-2]
+            one_data["target_item_id"] = int(self.inters[uid][-2])
             history = items[:-2]
             if self.max_his_len > 0:
                 history = history[-self.max_his_len:]
@@ -291,6 +297,7 @@ class SeqRecDataset(BaseDataset):
             one_data = dict()
             # one_data["user"] = uid
             one_data["item"] = items[-1]
+            one_data["target_item_id"] = int(self.inters[uid][-1])
             history = items[:-1]
             if self.max_his_len > 0:
                 history = history[-self.max_his_len:]
@@ -379,7 +386,8 @@ class SeqRecDataset(BaseDataset):
             input = ''.join(d["inters"])
             output = d["item"]
 
-        return dict(input_ids=input, labels=output, label=index, task_flag=0)
+        return dict(input_ids=input, labels=output, label=index, task_flag=0,
+                    target_item_id=d.get("target_item_id", -1))
 
     
 class ItemImageDataset(BaseDataset):
@@ -431,7 +439,7 @@ class ItemImageDataset(BaseDataset):
 
         input = self.soft_prompt + d[0]
         output = d[1]
-        return dict(input_ids=input, labels=output, task_flag=1)
+        return dict(input_ids=input, labels=output, task_flag=1, target_item_id=-1)
     
 class FusionSeqRecDataset(BaseDataset):
 
@@ -482,6 +490,8 @@ class FusionSeqRecDataset(BaseDataset):
                 if self.max_his_len > 0:
                     history = history[-self.max_his_len:]
                 
+                one_data["target_item_id"] = int(item)
+                
                 if self.task == 'seqitem2image':
                     history = ["".join(self.indices[str(h)]) for h in history]
                     one_data["inters"] = ''.join(history)
@@ -529,5 +539,6 @@ class FusionSeqRecDataset(BaseDataset):
                 input = self.soft_prompt + ''.join(history)
                 output = ''.join(self.indices[str(d['item'])])
 
-        return dict(input_ids=input, labels=output, task_flag=0)
+        return dict(input_ids=input, labels=output, task_flag=0,
+                    target_item_id=d.get("target_item_id", -1))
     

@@ -89,6 +89,18 @@ def train(args):
         
     model.resize_token_embeddings(len(tokenizer))
 
+    # 初始化轻量 CPA（如果启用）
+    if args.cpa_weight > 0 and args.collab_emb_path is not None:
+        import numpy as np
+        collab_emb = np.load(args.collab_emb_path)
+        model.init_lightweight_cpa(
+            collab_emb_np=collab_emb,
+            cpa_weight=args.cpa_weight,
+            cpa_loss_type=args.cpa_loss_type,
+        )
+        if local_rank == 0:
+            print(f"[CPA] 已加载协同嵌入: {args.collab_emb_path}, shape={collab_emb.shape}")
+
     config.vocab_size = len(tokenizer)
     if local_rank == 0:
         print("add {} new token.".format(add_num))
@@ -137,11 +149,11 @@ def train(args):
             save_total_limit=1,
             load_best_model_at_end=True,
             # deepspeed=args.deepspeed,
-            ddp_find_unused_parameters=False if ddp else None,
-            report_to=None,
+            ddp_find_unused_parameters=(True if args.cpa_weight > 0 else False) if ddp else None,
+            report_to="none",
             eval_delay= 1 if args.save_and_eval_strategy=="epoch" else 2000,
         ),
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=collator,
         callbacks=[early_stop]
     )
