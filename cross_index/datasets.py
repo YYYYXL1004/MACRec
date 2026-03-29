@@ -121,7 +121,7 @@ class TripleEmbDataset(data.Dataset):
     返回 (text_concat, image_concat, index)
     """
     
-    def __init__(self, text_data_path, img_data_path, collab_data_path):
+    def __init__(self, text_data_path, img_data_path, collab_data_path, collab_scale=1.0):
         # 加载原始向量
         text_raw = np.load(text_data_path)
         img_raw = np.load(img_data_path)
@@ -135,17 +135,20 @@ class TripleEmbDataset(data.Dataset):
         img_norm = l2_normalize(img_raw, norm='l2', axis=1)
         collab_norm = l2_normalize(collab_raw, norm='l2', axis=1)
         
+        # 缩放 collab 能量：α<1 时降低协同信号对 RQVAE 输入的影响力
+        collab_scaled = collab_norm * collab_scale
+        
         # 拼接: text+collab, image+collab
-        self.text_concat = np.concatenate([text_norm, collab_norm], axis=1).astype(np.float32)
-        self.img_concat = np.concatenate([img_norm, collab_norm], axis=1).astype(np.float32)
+        self.text_concat = np.concatenate([text_norm, collab_scaled], axis=1).astype(np.float32)
+        self.img_concat = np.concatenate([img_norm, collab_scaled], axis=1).astype(np.float32)
         
         self._text_dim = self.text_concat.shape[-1]
         self._img_dim = self.img_concat.shape[-1]
         
-        print(f"TripleEmbDataset 已加载:")
+        print(f"TripleEmbDataset 已加载 (collab_scale={collab_scale}):")
         print(f"  text  原始: {text_raw.shape} → 归一化+拼接collab → {self.text_concat.shape}")
         print(f"  image 原始: {img_raw.shape} → 归一化+拼接collab → {self.img_concat.shape}")
-        print(f"  collab 原始: {collab_raw.shape} (归一化后拼接到两路)")
+        print(f"  collab 原始: {collab_raw.shape}, scale={collab_scale}, 能量占比={collab_scale**2/(1+collab_scale**2)*100:.1f}%")
         print(f"  样本数: {len(self.text_concat)}")
 
     def __getitem__(self, index):

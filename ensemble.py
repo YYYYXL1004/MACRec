@@ -174,8 +174,8 @@ def main(args):
 
 
 
-    text_info = get_sort_results(text_outputs, text_scores, text_targets_ids, text_users, 20, text_index2item_id)
-    image_info = get_sort_results(image_outputs, image_scores, image_targets_ids, image_users, 20, image_index2item_id)
+    text_info = get_sort_results(text_outputs, text_scores, text_targets_ids, text_users, args.num_beams, text_index2item_id)
+    image_info = get_sort_results(image_outputs, image_scores, image_targets_ids, image_users, args.num_beams, image_index2item_id)
 
     print('text info: ', len(text_info))
     print('image info: ', len(image_info))

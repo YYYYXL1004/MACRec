@@ -101,6 +101,12 @@ def parse_train_args(parser):
     
     parser.add_argument("--valid_task", type=str, default="SeqRec")
 
+    # 序列增强参数
+    parser.add_argument("--aug_item_dropout", type=float, default=0.0,
+                        help="训练时对历史序列中每个item的随机丢弃概率，0表示不启用")
+    parser.add_argument("--aug_crop_prob", type=float, default=0.0,
+                        help="训练时对历史序列做随机前缀裁剪的概率，0表示不启用")
+
     # 轻量 CPA 相关参数
     parser.add_argument("--cpa_weight", type=float, default=0.0,
                         help="轻量CPA loss权重，0表示不启用")

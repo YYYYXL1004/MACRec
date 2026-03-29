@@ -43,6 +43,8 @@ def parse_args():
     parser.add_argument("--collab_fusion", type=str, default="concat",
                         choices=["concat", "proj_add"],
                         help="collab 融合方式: concat=拼接, proj_add=投影加法")
+    parser.add_argument("--collab_scale", type=float, default=1.0,
+                        help="concat模式下collab向量的缩放系数, <1降低collab影响力")
 
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='l2 regularization weight')
     parser.add_argument("--dropout_prob", type=float, default=0.0, help="dropout ratio")
@@ -123,8 +125,9 @@ if __name__ == '__main__':
     if args.collab_data_path and os.path.exists(args.collab_data_path):
         if args.collab_fusion == "concat":
             # 拼接方式: collab 归一化后拼接到 text/image，维度变大
-            data = TripleEmbDataset(args.text_data_path, args.image_data_path, args.collab_data_path)
-            print(f"[协同锚定-拼接] text_dim={data.text_dim}, img_dim={data.img_dim}")
+            data = TripleEmbDataset(args.text_data_path, args.image_data_path, args.collab_data_path,
+                                    collab_scale=args.collab_scale)
+            print(f"[协同锚定-拼接] text_dim={data.text_dim}, img_dim={data.img_dim}, collab_scale={args.collab_scale}")
         else:
             # 投影加法: 数据还是双路，collab 单独加载交给模型处理
             data = DualEmbDataset(args.text_data_path, args.image_data_path)

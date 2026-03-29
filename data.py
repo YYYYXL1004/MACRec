@@ -328,10 +328,39 @@ class SeqRecDataset(BaseDataset):
 
         return instruction, response
 
+    def _apply_seq_augmentation(self, history):
+        """训练时对历史序列施加随机增强，至少保留1个item"""
+        if len(history) <= 1:
+            return history
+
+        aug_dropout = getattr(self.args, 'aug_item_dropout', 0.0)
+        aug_crop = getattr(self.args, 'aug_crop_prob', 0.0)
+
+        # 随机前缀裁剪：以概率 aug_crop 截取随机长度的后缀
+        if aug_crop > 0 and random.random() < aug_crop:
+            crop_len = random.randint(1, len(history))
+            history = history[-crop_len:]
+
+        # 随机item丢弃：每个item以概率 aug_dropout 被丢掉
+        if aug_dropout > 0 and len(history) > 1:
+            kept = [item for item in history if random.random() > aug_dropout]
+            if len(kept) == 0:
+                kept = [random.choice(history)]
+            history = kept
+
+        return history
+
     def __getitem__(self, index):
         
         if self.mode != 'train' or self.train_data_mode <= 1:
             d = self.inter_data[index]
+            # 训练时施加序列增强
+            if self.mode == 'train':
+                aug_dropout = getattr(self.args, 'aug_item_dropout', 0.0)
+                aug_crop = getattr(self.args, 'aug_crop_prob', 0.0)
+                if aug_dropout > 0 or aug_crop > 0:
+                    d = dict(d)
+                    d["inters"] = self._apply_seq_augmentation(list(d["inters"]))
             
         elif self.train_data_mode == 2: 
             d = dict()
