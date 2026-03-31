@@ -84,12 +84,12 @@ if collab_data_path and os.path.exists(collab_data_path) and collab_fusion == "c
     # 拼接模式: 必须和训练时一样用拼接后的输入
     data = TripleEmbDataset(args.text_data_path, args.image_data_path, collab_data_path)
     print(f"[生成code-拼接模式] text_dim={data.text_dim}, img_dim={data.img_dim}")
-elif collab_data_path and os.path.exists(collab_data_path) and collab_fusion == "proj_add":
-    # 投影加法: 数据还是双路，collab 通过模型内投影层处理
+elif collab_data_path and os.path.exists(collab_data_path) and collab_fusion in ("proj_add", "gating", "cross_attn"):
+    # 模型内融合 (proj_add/gating/cross_attn): 数据双路，collab 通过模型处理
     data = DualEmbDataset(args.text_data_path, args.image_data_path)
     collab_emb = np.load(collab_data_path)
     collab_dim = collab_emb.shape[-1]
-    print(f"[生成code-投影加法] collab_dim={collab_dim}")
+    print(f"[生成code-{collab_fusion}] collab_dim={collab_dim}")
 else:
     data = DualEmbDataset(args.text_data_path, args.image_data_path)
     print("[生成code] 纯 content 输入")
@@ -110,6 +110,7 @@ model = CrossRQVAE(text_in_dim=data.text_dim,
                   use_cross_rq=args.use_cross_rq,
                   begin_cross_layer=args.begin_cross_layer,
                   collab_dim=collab_dim,
+                  collab_fusion=collab_fusion if collab_dim > 0 else "proj_add",
                   )
 
 model.load_state_dict(state_dict)

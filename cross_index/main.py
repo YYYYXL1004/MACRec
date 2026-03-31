@@ -41,8 +41,8 @@ def parse_args():
     parser.add_argument("--collab_data_path", type=str, default="",
                         help="collab embedding 路径, 非空时启用协同锚定 (拼接到 RQVAE 输入)")
     parser.add_argument("--collab_fusion", type=str, default="concat",
-                        choices=["concat", "proj_add"],
-                        help="collab 融合方式: concat=拼接, proj_add=投影加法")
+                        choices=["concat", "proj_add", "gating", "cross_attn"],
+                        help="collab 融合方式: concat=拼接, proj_add=投影加法, gating=门控, cross_attn=交叉注意力")
     parser.add_argument("--collab_scale", type=float, default=1.0,
                         help="concat模式下collab向量的缩放系数, <1降低collab影响力")
 
@@ -129,11 +129,11 @@ if __name__ == '__main__':
                                     collab_scale=args.collab_scale)
             print(f"[协同锚定-拼接] text_dim={data.text_dim}, img_dim={data.img_dim}, collab_scale={args.collab_scale}")
         else:
-            # 投影加法: 数据还是双路，collab 单独加载交给模型处理
+            # 模型内融合 (proj_add / gating / cross_attn): collab 单独加载交给模型处理
             data = DualEmbDataset(args.text_data_path, args.image_data_path)
             collab_emb = np.load(args.collab_data_path)
             collab_dim = collab_emb.shape[-1]
-            print(f"[协同锚定-投影加法] collab_dim={collab_dim}, text_dim={data.text_dim}, img_dim={data.img_dim}")
+            print(f"[协同锚定-{args.collab_fusion}] collab_dim={collab_dim}, text_dim={data.text_dim}, img_dim={data.img_dim}")
     else:
         data = DualEmbDataset(args.text_data_path, args.image_data_path)
         print("[无协同锚定] 使用纯 content 特征输入")
@@ -163,10 +163,14 @@ if __name__ == '__main__':
                   begin_cross_layer=args.begin_cross_layer,
                   text_class_info=text_class_info,
                   image_class_info=image_class_info,
+                  text_contrast_weight=args.text_contrast_weight,
+                  image_contrast_weight=args.image_contrast_weight,
+                  recon_contrast_weight=args.recon_contrast_weight,
                   collab_neighbor_info=collab_neighbor_info,
                   collab_contrastive_weight=args.collab_contrastive_weight,
                   collab_on_text=args.collab_on_text,
                   collab_dim=collab_dim,
+                  collab_fusion=args.collab_fusion if collab_dim > 0 else "proj_add",
                   )
     # 投影加法: 将 collab embedding 注册到模型中，训练时按 index 查找
     if collab_dim > 0:

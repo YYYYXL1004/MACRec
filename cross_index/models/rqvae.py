@@ -34,6 +34,7 @@ class CrossRQVAE(nn.Module):
                  collab_contrastive_weight=0.0,
                  collab_on_text=True,
                  collab_dim=0,
+                 collab_fusion="proj_add",
         ):
         super(CrossRQVAE, self).__init__()
         # CAQ: 协同邻居表和正则化权重
@@ -41,12 +42,19 @@ class CrossRQVAE(nn.Module):
         self.collab_contrastive_weight = collab_contrastive_weight
         self.collab_on_text = collab_on_text
 
-        # 投影加法: collab_dim > 0 时启用，将 collab 投影到 align_dim 后加到 align 输出上
+        # 模型内融合: collab_dim > 0 时启用 (proj_add / gating / cross_attn)
         self.collab_dim = collab_dim
+        self.collab_fusion = collab_fusion
         self._collab_embeddings = None
         if collab_dim > 0:
             self.text_collab_proj = nn.Linear(collab_dim, 768)
             self.image_collab_proj = nn.Linear(collab_dim, 768)
+            if collab_fusion == "gating":
+                self.text_gate = nn.Sequential(nn.Linear(768 * 2, 768), nn.Sigmoid())
+                self.image_gate = nn.Sequential(nn.Linear(768 * 2, 768), nn.Sigmoid())
+            elif collab_fusion == "cross_attn":
+                self.text_cross_attn = nn.MultiheadAttention(768, num_heads=4, batch_first=True)
+                self.image_cross_attn = nn.MultiheadAttention(768, num_heads=4, batch_first=True)
 
         self.text_in_dim = text_in_dim
         self.image_in_dim = image_in_dim
@@ -165,18 +173,45 @@ class CrossRQVAE(nn.Module):
         return text_x_res, text_loss, text_indices, text_distances, image_x_res, image_loss, image_indices, image_distances
 
     def register_collab_embeddings(self, collab_emb_tensor):
-        """注册 collab embedding 查找表 (投影加法模式用)"""
+        """注册 collab embedding 查找表 (模型内融合模式用)"""
         self._collab_embeddings = collab_emb_tensor
+
+    def _fuse_collab(self, text_align_in, image_align_in, item_index):
+        """在 align 空间 (768d) 融合 collab 信号，支持 proj_add / gating / cross_attn"""
+        if self.collab_dim == 0 or item_index is None or self._collab_embeddings is None:
+            return text_align_in, image_align_in
+
+        collab_x = self._collab_embeddings[item_index].to(text_align_in.device)
+        text_collab = self.text_collab_proj(collab_x)
+        image_collab = self.image_collab_proj(collab_x)
+
+        if self.collab_fusion == "proj_add":
+            text_align_in = text_align_in + text_collab
+            image_align_in = image_align_in + image_collab
+
+        elif self.collab_fusion == "gating":
+            tg = self.text_gate(torch.cat([text_collab, text_align_in], dim=-1))
+            text_align_in = tg * text_collab + (1 - tg) * text_align_in
+            ig = self.image_gate(torch.cat([image_collab, image_align_in], dim=-1))
+            image_align_in = ig * image_collab + (1 - ig) * image_align_in
+
+        elif self.collab_fusion == "cross_attn":
+            # collab 作为额外 token 与 content token 做 self-attention，取 content 位输出
+            text_tokens = torch.stack([text_collab, text_align_in], dim=1)
+            text_out, _ = self.text_cross_attn(text_tokens, text_tokens, text_tokens)
+            text_align_in = text_align_in + text_out[:, 1, :]
+            image_tokens = torch.stack([image_collab, image_align_in], dim=1)
+            image_out, _ = self.image_cross_attn(image_tokens, image_tokens, image_tokens)
+            image_align_in = image_align_in + image_out[:, 1, :]
+
+        return text_align_in, image_align_in
 
     def forward(self, text_x, image_x, item_index=None, use_sk=True):
         text_align_in = self.text_align_encoder(text_x)
         image_align_in = self.image_align_encoder(image_x)
 
-        # 投影加法: 在 align 空间中加入 collab 信号
-        if self.collab_dim > 0 and item_index is not None and self._collab_embeddings is not None:
-            collab_x = self._collab_embeddings[item_index].to(text_align_in.device)
-            text_align_in = text_align_in + self.text_collab_proj(collab_x)
-            image_align_in = image_align_in + self.image_collab_proj(collab_x)
+        # 模型内融合: 在 align 空间中加入 collab 信号
+        text_align_in, image_align_in = self._fuse_collab(text_align_in, image_align_in, item_index)
 
         text_x = self.text_encoder(text_align_in)
         image_x = self.image_encoder(image_align_in)
@@ -313,11 +348,8 @@ class CrossRQVAE(nn.Module):
         text_align_in = self.text_align_encoder(text_xs)
         image_align_in = self.image_align_encoder(image_xs)
 
-        # 投影加法: 生成 code 时也要加 collab 信号
-        if self.collab_dim > 0 and item_index is not None and self._collab_embeddings is not None:
-            collab_x = self._collab_embeddings[item_index].to(text_align_in.device)
-            text_align_in = text_align_in + self.text_collab_proj(collab_x)
-            image_align_in = image_align_in + self.image_collab_proj(collab_x)
+        # 模型内融合: 生成 code 时也要加 collab 信号
+        text_align_in, image_align_in = self._fuse_collab(text_align_in, image_align_in, item_index)
 
         text_x_e = self.text_encoder(text_align_in)
         image_x_e = self.image_encoder(image_align_in)
