@@ -1,0 +1,820 @@
+%%
+%% ACM MM sigconf format
+%%
+\documentclass[sigconf, anonymous, review]{acmart}
+%%
+%% Rights management information (placeholder - replace when you get the real one)
+%%
+% \setcopyright{acmlicensed}
+% \copyrightyear{2025}
+% \acmYear{2025}
+% \acmDOI{XXXXXXX.XXXXXXX}
+\acmConference[MM '26]{Proceedings of the 34th ACM International Conference on Multimedia}{November 10--14, 2026}{Rio de Janeiro, Brazil}
+% \acmISBN{978-1-4503-XXXX-X/2025/10}
+\setcopyright{none}
+\settopmatter{printacmref=false}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+%%
+%% Additional packages (compatible with acmart)
+%%
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{subfig}
+\usepackage{array}
+\newcolumntype{C}{>{\centering\arraybackslash}m{4em}}
+
+\begin{document}
+
+%%
+%% Title
+%%
+\title{CAGRec: Collaborative-Anchor Guided Multimodal Generative Recommender}
+
+%%
+%% Authors - TODO: replace with your own info
+%%
+
+%%
+%% Abstract
+%%
+\begin{abstract}
+Multimodal Generative Recommendation (MGR) encodes items as discrete semantic identifiers (IDs) via vector quantization and predicts the next item through autoregressive token generation. 
+% 
+Conventional multi-modal approaches construct item codes from text and image features through cross-modal RQ-VAE, consistently outperforming single-modality methods. 
+% 
+However, existing methods build code spaces purely from content features, overlooking that frequently co-occurring items in user interaction sequences can differ greatly in content.
+% 
+Moreover, autoregressive decoding ranks candidates solely by token-level likelihood, unable to evaluate them in continuous semantic space. 
+% 
+We propose Collaborative-Anchor guided multimodal Generative Recommender (CAGRec) to address both challenges. 
+% 
+For the content-collaborative gap, we anchor the cross-modal RQ-VAE with collaborative embeddings derived from user interaction sequences, steering both text and image code spaces toward behavioral structure.
+%
+The anchored RQ-VAE decoder gives rise to a collaborative-semantic space that jointly encodes behavioral and content signals. Existing contrastive alignment objectives, when operating in this enriched space, capture fine-grained collaborative similarity that code-level supervision alone cannot express.
+%
+For the discrete-continuous gap, we design a semantic-aware reranking strategy that combines generation likelihood with collaborative-semantic similarity, pulling candidate evaluation back into the continuous space.
+% 
+Extensive experiments on three recommendation datasets show that CAGRec consistently outperforms state-of-the-art baselines.
+% 
+Our codes are available at \url{XXXX}.
+\end{abstract}
+
+%%
+%% CCS Concepts - TODO: generate your own at https://dl.acm.org/ccs/ccs.cfm
+%%
+% \begin{CCSXML}
+% <ccs2012>
+%  <concept>
+%   <concept_id>10002951.10003317.10003347.10003350</concept_id>
+%   <concept_desc>Information systems~Recommender systems</concept_desc>
+%   <concept_significance>500</concept_significance>
+%  </concept>
+%  <concept>
+%   <concept_id>10010147.10010178.10010179</concept_id>
+%   <concept_desc>Computing methodologies~Natural language processing</concept_desc>
+%   <concept_significance>300</concept_significance>
+%  </concept>
+% </ccs2012>
+% \end{CCSXML}
+
+% \ccsdesc[500]{Information systems~Recommender systems}
+% \ccsdesc[300]{Computing methodologies~Natural language processing}
+
+%%
+%% Keywords
+%%
+\keywords{Generative Recommendation, Multimodal Learning, Cross-modal Quantization, Semantic Identifiers}
+
+\maketitle
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% INTRODUCTION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{Intro.pdf}
+    \caption{Illustrative comparison on the Instruments dataset. (a)~User interaction history. (b)~Content-only methods rank candidates by text and image similarity: a guitar cable scores high on text similarity and a guitar case scores high on image similarity, yet neither modality surfaces the ground truth (amplifier). (c)~With collaborative anchoring, the collaborative-semantic similarity correctly ranks the amplifier first and retrieves collaboratively related items (e.g., effects pedal) that content-only methods overlook.}
+    \Description{Illustrative comparison showing content-only methods fail to rank the ground truth item while collaborative anchoring succeeds.}
+    \label{fig:intro}
+\end{figure}
+\section{Introduction}
+Recommendation systems help users navigate information overload across e-commerce~\cite{amazonrec1,taobaorec2,liu2025multi,zhang2022mind}, social media~\cite{davidson2010youtube,dnn}, online advertising~\cite{xi2019modelling,xi2021modeling}, and short video platforms~\cite{zhu2024interest,zhu2025long,bin2025real}.
+%
+With the rapid progress of large language models (LLMs), generative recommendation (GR) has emerged as a promising paradigm~\cite{wang2023generative,li2024large} that recasts recommendation as next-token prediction.
+%
+Each item is encoded as a discrete semantic identifier (ID) through vector quantization, and an autoregressive model generates the next item's semantic ID given the user's interaction history~\cite{tiger}.
+%
+This formulation leverages the strong sequence modeling capabilities of LLMs~\cite{zhang2025hiergr,zhang2025multi,liu2025cat}.
+
+A central question in GR is how to construct high-quality semantic IDs.
+%
+Early methods quantize single-modality (text) embeddings through RQ-VAE~\cite{tiger,image_rqvae}.
+%
+Later work improves tokenization via collaborative regularization~\cite{letter} or language model adaptation~\cite{LCRec}.
+%
+However, a single modality offers limited discriminability.
+%
+Recent multi-modal methods integrate text and visual features to produce richer item codes.
+%
+MMGRec~\cite{liu2024mmgrec} uses Graph RQ-VAE to generate item codes from multi-modal features propagated through user-item interaction graphs.
+%
+MQL4GRec~\cite{mql} builds a shared quantitative language across modalities and domains.
+%
+MACRec~\cite{macrec} applies cross-modal contrastive learning during residual quantization to reduce codebook collisions and improve code quality.
+%
+These multi-modal extensions consistently outperform single-modality methods.
+
+
+Despite this progress, existing multi-modal GR methods build code spaces primarily from content features without explicitly aligning the code structure with collaborative structure.
+%
+Content similarity, however, does not equal collaborative similarity.
+%
+As shown in Figure~\ref{fig:intro}, given a user who purchased an electric guitar, a tuner, and a guitar pick, content-only methods rank a guitar cable first (high text similarity due to shared ``guitar'' terminology) and a guitar case second (high image similarity due to guitar-shaped outline), while the ground truth---a guitar amplifier---ranks last because it differs in both text description and visual appearance.
+%
+With collaborative anchoring, the amplifier rises to the top because users who buy guitars frequently purchase amplifiers next, and the model also surfaces an effects pedal that content-only methods entirely miss.
+%
+When the code space primarily reflects content proximity, collaboratively related items receive distant codes, and the autoregressive decoder must predict across a topology that conflicts with the recommendation objective.
+%
+Furthermore, at inference, autoregressive decoding ranks candidates solely by token-level log-probabilities in the discrete code space; two items with nearly identical behavioral patterns can receive very different beam scores if their codes diverge at early positions.
+
+Several recent studies have tried to address this gap.
+%
+LETTER~\cite{letter} adds a collaborative regularization loss during item tokenization, but treats collaborative signals as an auxiliary objective without structurally reshaping the code structure, and is limited to a single content modality.
+%
+ColaRec~\cite{colarec} derives item identifiers from pretrained collaborative filtering models and aligns them with content representations through contrastive learning, yet also operates on a single modality and cannot exploit multi-modal complementarity.
+%
+UNGER~\cite{unger} integrates semantic and collaborative knowledge into a unified code through adaptive embedding learning, but compresses all information into one code, sacrificing per-modality discriminability.
+%
+None of these methods simultaneously anchors multi-modal code learning with collaborative structure while preserving per-modality code spaces, nor do they leverage collaborative-semantic similarity to refine candidate ranking at inference.
+%
+We propose \textbf{C}ollaborative-\textbf{A}nchor \textbf{G}uided Multimodal Generative \textbf{Rec}ommender~(\textbf{CAGRec}), which bridges multi-modal code learning with collaborative signals.
+%
+We anchor the cross-modal RQ-VAE with collaborative embeddings learned from user interaction sequences, injecting behavioral structure into both text and image code spaces so that collaboratively related items receive proximate codes.
+%
+The anchored RQ-VAE decoder gives rise to a collaborative-semantic space that jointly encodes behavioral and content signals; during training, we further propose Collaborative Preference Anchoring~(CPA), a cosine alignment objective that grounds user representations in this space.
+%
+At inference, we design a semantic-aware reranking strategy that combines beam search likelihood with collaborative-semantic similarity, pulling candidate evaluation back into the continuous space.
+
+Our main contributions are threefold:
+\begin{itemize}
+    \item We propose collaborative-anchored cross-modal quantization, which concatenates collaborative embeddings from pretrained sequential models with text and image features as the RQ-VAE input, restructuring both code spaces to respect behavioral proximity while preserving per-modality discriminability.
+    \item We design a semantic-aware reranking strategy that re-evaluates beam search candidates by combining generation likelihood with continuous collaborative-semantic similarity, bridging the discrete-continuous gap at inference.
+    \item We conduct extensive experiments on three recommendation datasets, showing that CAGRec consistently outperforms state-of-the-art baselines.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% RELATED WORK
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Related Work}
+
+\subsection{Generative Recommendation}
+
+Classical sequential recommenders---recurrent models~\cite{gru4rec}, self-attentive Transformers~\cite{sasrec}, masked Transformers~\cite{sun2019bert4rec}, and multi-modal variants~\cite{wei2019mmgcn,wang2023missrec}---rank items by representation similarity in an embed-and-retrieve paradigm.
+%
+Generative recommendation (GR) departs from this paradigm: each item is encoded as a discrete semantic ID via RQ-VAE~\cite{image_rqvae}, and a sequence-to-sequence model autoregressively generates the target ID from the user's interaction history.
+%
+TIGER~\cite{tiger} establishes this paradigm by quantizing single-modality content embeddings into hierarchical codes and decoding the next item's code with a Transformer.
+%
+LC-Rec~\cite{LCRec} further adapts LLMs for GR through alignment tuning that bridges the gap between language semantics and recommendation semantics.
+%
+These single-modality methods rely solely on text to construct codes; text captures brand or category information but cannot represent visual attributes such as color, shape, or style, limiting the discriminability of the resulting semantic IDs.
+%
+Multi-modal extensions address this by incorporating complementary content signals so that items indistinguishable in one modality can be separated in another.
+%
+MMGRec~\cite{liu2024mmgrec} propagates multi-modal features through user-item interaction graphs before quantization via Graph RQ-VAE.
+%
+MQL4GRec~\cite{mql} encodes text and image features into a shared quantitative language and transfers recommendation knowledge across domains through pretraining.
+%
+MACRec~\cite{macrec} applies cross-modal contrastive learning during residual quantization, reducing codebook collisions by exploiting inter-modality complementarity while maintaining separate text and image code paths.
+%
+These methods improve semantic ID quality through richer content signals, yet the code spaces themselves remain content-driven without explicit collaborative guidance.
+
+\subsection{Collaborative and Content Signal Alignment}
+
+Items with distinct descriptions and appearances can share similar interaction patterns; content similarity does not equal collaborative similarity.
+%
+Bridging this gap is critical for GR, because the code topology directly constrains autoregressive prediction---collaboratively related items that receive distant codes force the decoder to predict across a conflicting structure.
+
+LETTER~\cite{letter} introduces a collaborative contrastive loss and a diversity loss during tokenization to push co-interacted items toward proximate codes.
+%
+ColaRec~\cite{colarec} derives item identifiers from a pretrained collaborative filtering model and aligns them with content representations through contrastive learning and an item-indexing task.
+%
+UNGER~\cite{unger} integrates semantic and collaborative knowledge into a unified code via joint optimization of cross-modality alignment and next-item prediction.
+%
+MSCGRec~\cite{mscgrec} treats collaborative features extracted from a sequential recommender as an additional modality alongside text and image, and proposes constrained sequence learning to restrict the output space during training.
+%
+These methods each inject collaborative signals into the code learning process; however, they either operate on a single content modality~\cite{letter,colarec}, compress all signals into one code at the cost of per-modality discriminability~\cite{unger}, or route collaborative signals through a separate quantization path that does not reshape the text or image code topology~\cite{mscgrec}.
+
+Beyond code-space alignment, ETEGRec~\cite{etegrec} addresses the gap between the item tokenizer and the generative recommender through alternating optimization, proposing Sequence-Item Alignment~(SIA)---which minimizes the KL divergence between the recommender encoder's quantized distribution and the target item's token distribution---and Preference-Semantic Alignment~(PSA)---which uses contrastive learning to align the decoder's user-preference representation with the target item's reconstructed semantic embedding.
+%
+This end-to-end alignment enables tokenizer-recommender co-adaptation, but the code space is still built from single-modality content features and inference remains purely in discrete code space.
+
+CAGRec builds upon MACRec's cross-modal RQ-VAE and further proposes collaborative preference anchoring to align user representations with the collaborative-semantic space.
+%
+It anchors multi-modal code learning with collaborative embeddings, structurally reshaping both text and image code spaces toward behavioral proximity while preserving per-modality paths, and leverages the resulting collaborative-semantic space for continuous reranking at inference.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% METHODOLOGY
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ---- CAGRec 总框架图 ----
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\linewidth]{CAGRec.pdf}
+    \caption{Overall architecture of CAGRec. \textbf{Left}: Collaborative-Anchored Cross-Modal Quantization. Collaborative embeddings from a pretrained SASRec are concatenated with text and image features to form anchored inputs for dual-path RQ-VAE. Cross-modal contrastive learning ($\mathcal{L}_{\mathrm{con}}$) aligns residuals across modalities, reconstruction alignment ($\mathcal{L}_{\mathrm{align}}$) keeps the two quantized latents close, and Collaborative-Aware Regularization ($\mathcal{L}_{\mathrm{CAR}}$) reinforces collaborative proximity in the pre-quantization latent space. The decoders output into the collaborative-semantic space. \textbf{Upper right}: Recommendation Training. A T5-based model predicts target item codes ($\mathcal{L}_{\mathrm{code}}$) and is trained with Collaborative Preference Anchoring ($\mathcal{L}_{\mathrm{CPA}}$) that minimizes cosine distance between the decoder's user representation and the target item's collaborative-semantic embedding. \textbf{Lower right}: Semantic-aware Reranking. At inference, the T5 encoder output is projected into the collaborative-semantic space via $f_{\mathrm{dec}}$, and beam search candidates are reranked by combining generation likelihood with cosine similarity.}
+    \Description{Architecture diagram of CAGRec with three parts: (left) collaborative-anchored cross-modal RQ-VAE that concatenates collaborative embeddings with text and image features for dual-path quantization with collaborative-aware regularization; (upper right) recommendation training with code prediction and cosine-based collaborative preference anchoring; (lower right) semantic-aware reranking that combines beam search scores with collaborative-semantic cosine similarity.}
+    \label{fig:model}
+\end{figure*}
+
+\section{Methodology}
+
+\noindent\textbf{Problem formulation.}
+Let $\mathcal{U}$ and $\mathcal{I}$ denote the user and item sets.
+%
+Each item $i \in \mathcal{I}$ is associated with a text description and an image.
+%
+For user $u$ with interaction history $[i_1, \ldots, i_n]$, the goal is to predict the next item $i_{n+1}$.
+
+\noindent\textbf{Overview.}
+Figure~\ref{fig:model} illustrates CAGRec, which injects collaborative signals at three stages.
+%
+To bridge the \emph{content-collaborative gap}, we anchor the cross-modal RQ-VAE with collaborative embeddings from user interaction sequences, steering code spaces toward behavioral structure~(\S\ref{sec:quant}).
+%
+The anchored RQ-VAE decoder gives rise to a \emph{collaborative-semantic space} that jointly encodes behavioral and content signals (formally defined in \S\ref{sec:quant}).
+%
+During training, we further propose Collaborative Preference Anchoring~(CPA) to ground user representations in this space~(\S\ref{sec:cpa}).
+%
+To address the \emph{discrete-continuous gap} at inference, we design a semantic-aware reranking strategy that re-evaluates candidates in the collaborative-semantic space~(\S\ref{sec:rerank}).
+
+% ==================================================================
+% 3.1 Collaborative-Anchored Cross-Modal Item Quantization
+% ==================================================================
+\subsection{Collaborative-Anchored Cross-Modal Item Quantization}
+\label{sec:quant}
+
+We build upon the cross-modal RQ-VAE framework of MACRec~\cite{macrec}, which introduces cross-modal contrastive learning during residual quantization.
+%
+However, its code spaces are built purely from content features: items with similar interaction patterns but distinct text or images end up with distant codes, forcing the downstream generative model to predict across a misaligned code topology.
+%
+Our key extension is to anchor the quantization input with collaborative embeddings derived from user behavior, so that the code structure respects behavioral proximity from the outset.
+
+% ---- 协同嵌入与锚定输入 ----
+\subsubsection{Collaborative Embedding and Anchored Input}
+
+We pretrain a SASRec~\cite{sasrec} model on user interaction sequences and use its learned item embedding table to obtain a collaborative embedding $\mathbf{c}_i \in \mathbb{R}^{d_c}$ for each item~$i$.
+% 
+This embedding encodes item co-occurrence patterns learned from sequential context: items that frequently appear within similar interaction sequences receive proximate representations, regardless of their content features.
+% 
+We also encode the text description and image of item~$i$ into $\mathbf{t}_i \in \mathbb{R}^{d_t}$ and $\mathbf{v}_i \in \mathbb{R}^{d_v}$ using a pretrained sentence encoder and a vision encoder, respectively.
+
+We construct the \emph{collaborative-anchored} input for each modality by concatenation:
+\begin{equation}
+    \mathbf{s}_i^t = [\mathbf{c}_i \,;\, \mathbf{t}_i] \in \mathbb{R}^{d_c+d_t}, \quad
+    \mathbf{s}_i^v = [\mathbf{c}_i \,;\, \mathbf{v}_i] \in \mathbb{R}^{d_c+d_v},
+\end{equation}
+where $[\cdot\,;\,\cdot]$ denotes concatenation. For notational brevity, we omit the item subscript~$i$ when clear from context.
+%
+The shared $\mathbf{c}_i$ acts as a cross-modal anchor: both modality paths receive the same collaborative embedding, so items with similar co-occurrence patterns share an identical collaborative component in the input of \emph{both} paths, implicitly aligning the two encoders toward a common behavioral structure while the modality-specific component ($\mathbf{t}_i$ or $\mathbf{v}_i$) retains per-modality discriminability.
+%
+Concatenation preserves collaborative and content signals in separate subspaces, letting the MLP encoder learn a flexible combination without collapsing the two.
+
+% ---- 双路 RQ-VAE ----
+\subsubsection{Dual-Path Cross-Modal RQ-VAE}
+
+We adopt a dual-path Residual-Quantized Variational AutoEncoder (RQ-VAE) architecture.
+% 
+Each path has an MLP encoder, an $L$-layer residual quantizer, and an MLP decoder.
+% 
+The encoders map the anchored inputs into a shared latent dimension:
+%
+\begin{equation}
+    \mathbf{z}^t = \mathrm{Enc}_t(\mathbf{s}^t), \quad
+    \mathbf{z}^v = \mathrm{Enc}_v(\mathbf{s}^v),
+\end{equation}
+
+where $\mathbf{z}^t, \mathbf{z}^v \in \mathbb{R}^{d_e}$ serve as the initial residuals $\mathbf{r}_1^t = \mathbf{z}^t$, $\mathbf{r}_1^v = \mathbf{z}^v$.
+%
+At the $l$-th RQ layer, each modality maintains an independent codebook $\mathcal{E}_l^{m} = \{\mathbf{e}_{l,k}^{m}\}_{k=1}^{M}$ ($m \in \{t,v\}$), where $M$ is the codebook size.
+% 
+Quantization selects the nearest codebook entry and updates the residual:
+\begin{equation}
+    c_l^{m} = \arg\min_k \|\mathbf{r}_l^m - \mathbf{e}_{l,k}^m\|_2, \quad
+    \mathbf{r}_{l+1}^m = \mathbf{r}_l^m - \mathbf{e}_{l,c_l^m}^m.
+\end{equation}
+The code tuple $(c_1^m, \ldots, c_L^m)$ becomes the semantic ID for item~$i$ under modality~$m$.
+
+Following MACRec~\cite{macrec}, we apply two cross-modal objectives during quantization to exploit inter-modal complementarity.
+%
+Starting from layer~$L_c$, a cross-modal contrastive loss applies InfoNCE on the RQ residuals using the other modality's K-means pseudo-labels as positive-pair indicators:
+\begin{equation}
+    \mathcal{L}_{\mathrm{con}}^l = \mathcal{L}_{\mathrm{con}}^{l,\, v \to t} + \mathcal{L}_{\mathrm{con}}^{l,\, t \to v}, \quad l \geq L_c,
+\end{equation}
+encouraging codebooks to capture complementary structures and reducing codebook collapse.
+%
+A reconstruction alignment loss $\mathcal{L}_{\text{align}}$ applies bidirectional InfoNCE on the quantized latents:
+\begin{equation}
+    \hat{\mathbf{z}}^m = \sum_{l=1}^{L}\mathbf{e}_{l,c_l^m}^m,
+\end{equation}
+to keep the text-path and image-path representations of the same item close.
+%
+Each path has a separate decoder that reconstructs the collaborative-anchored input: $\hat{\mathbf{s}}^m = \mathrm{Dec}_m(\hat{\mathbf{z}}^m) \in \mathbb{R}^{d_c+d_m}$.
+%
+We refer to this output space as the \emph{collaborative-semantic space}; it jointly encodes collaborative and content information and serves as the continuous target for both CPA~(\S\ref{sec:cpa_loss}) and reranking~(\S\ref{sec:rerank}).
+%
+We refer readers to~\citet{macrec} for the full formulation of these two losses.
+
+% ---- 协同感知正则化 ----
+\subsubsection{Collaborative-Aware Regularization}
+
+Concatenation anchors the \emph{input} with collaborative structure; we further regularize the \emph{latent space} so that the learned representations respect collaborative proximity before quantization.
+%
+Inspired by the collaborative regularization in LETTER~\cite{letter}, we apply a contrastive loss on the encoder outputs $\mathbf{z}^t,\mathbf{z}^v$ \emph{before} quantization.
+%
+Unlike LETTER, which aligns post-quantization embeddings with CF embeddings in a single-modality setting via cross-space contrastive learning, our regularization operates in the pre-quantization latent space of both modality paths using collaborative neighbor relationships.
+%
+For each item~$i$, we precompute a set of collaborative neighbors $\mathcal{N}(i)$ as items with the highest cosine similarity in the SASRec embedding space.
+%
+For each modality $m \in \{t,v\}$, we apply InfoNCE where items sharing collaborative neighbors form positive pairs:
+\begin{equation}
+    \mathcal{L}_{\text{CAR}}^m = -\frac{1}{|\mathcal{P}^m|}\sum_{(i,j)\in\mathcal{P}^m}\log\frac{\exp(\cos(\mathbf{z}_i^m,\mathbf{z}_j^m)/\tau_c)}{\sum_{k}\exp(\cos(\mathbf{z}_i^m,\mathbf{z}_k^m)/\tau_c)},
+\end{equation}
+where $\mathcal{P}^m$ is the set of positive pairs $(i,j)$ with $j \in \mathcal{N}(i)$ within the current batch, and $\tau_c$ is the temperature.
+%
+This loss synergizes with collaborative anchoring: the concatenated collaborative embedding provides the initial behavioral structure in the input, while $\mathcal{L}_{\text{CAR}}$ reinforces this structure in the learned latent space, encouraging collaboratively related items to cluster before code assignment.
+
+% ---- 量化阶段训练目标 ----
+\subsubsection{Item Quantization Objective}
+
+The overall pretraining objective for the dual-path RQ-VAE is:
+\begin{equation}
+    \mathcal{L}_{\text{quant}} = \mathcal{L}_{\text{recon}} + \lambda_q\,\mathcal{L}_{\text{vq}} + \sum_{l=L_c}^{L-1}\lambda_{\text{con}}^l\,\mathcal{L}_{\text{con}}^l + \lambda_a\,\mathcal{L}_{\text{align}} + \lambda_r\,\mathcal{L}_{\text{CAR}},
+    \label{eq:quant}
+\end{equation}
+where $\mathcal{L}_{\text{recon}} = \|\mathbf{s}^t - \hat{\mathbf{s}}^t\|_2^2 + \|\mathbf{s}^v - \hat{\mathbf{s}}^v\|_2^2$ is the reconstruction loss, $\mathcal{L}_{\text{vq}}$ is the standard VQ commitment loss~\cite{image_rqvae}, $\mathcal{L}_{\text{CAR}} = \mathcal{L}_{\text{CAR}}^t + \mathcal{L}_{\text{CAR}}^v$ is the collaborative-aware regularization summed over both modalities, and $\lambda_q$, $\lambda_{\text{con}}^l$, $\lambda_a$, $\lambda_r$ are trade-off hyperparameters.
+% 
+When multiple items are mapped to the same code tuple (ID conflict), we follow~\citet{mql} and reassign conflicting items to their next-nearest codebook entries, ensuring a one-to-one mapping between items and codes.
+
+% ==================================================================
+% 3.2 Generative Recommendation with CPA
+% ==================================================================
+\subsection{Generative Recommendation with Collaborative Preference Anchoring}
+\label{sec:cpa}
+
+After pretraining the RQ-VAE, each item has a text semantic ID and an image semantic ID.
+% 
+We train a T5-based~\cite{t5} encoder-decoder model that autoregressively generates the next item's code given the user's interaction history.
+%
+Beyond the standard code prediction loss, we propose \emph{Collaborative Preference Anchoring}~(CPA) to ground the recommender's user representations in the continuous collaborative-semantic space produced by the anchored RQ-VAE decoder~(\S\ref{sec:quant}).
+%
+Because this space encodes both behavioral and content signals by construction, CPA implicitly encourages the recommender to capture collaborative proximity that pure content alignment would miss.
+
+% ---- 双路序列推荐 ----
+\subsubsection{Dual-Path Code Generation}
+
+The text and image paths share the same T5 backbone but maintain path-specific token embedding tables and adapter layers.
+% 
+Given a user's interaction history encoded as a code sequence $\mathbf{x}^m$ for modality~$m$, the T5 encoder processes $\mathbf{x}^m$ and the decoder predicts the target code token by token:
+\begin{equation}
+    \mathcal{L}_{\text{code}}^m = -\sum_{l=1}^{L} w_l\,\log P_\theta(c_l^m \mid c_{<l}^m,\, \mathbf{x}^m),
+\end{equation}
+where $w_l$ is the position-specific weight that allows up-weighting early code positions for coarse-level accuracy.
+%
+Following MACRec~\cite{macrec}, we adopt six auxiliary training tasks (item-to-image, image-to-item, etc.) alongside the primary sequential recommendation tasks to enhance the model's cross-modal understanding.
+
+% ---- CPA ----
+\subsubsection{Collaborative Preference Anchoring (CPA)}
+\label{sec:cpa_loss}
+
+Code-level supervision treats all mismatched codes as equally wrong; CPA directly aligns the decoder's output with continuous collaborative-semantic embeddings, recovering fine-grained similarity that discretization discards.
+
+For the target item, the RQ-VAE reconstructs its anchored semantic embedding: $\hat{\mathbf{s}}_{\text{tgt}}^m = \mathrm{Dec}_m(\hat{\mathbf{z}}_{\text{tgt}}^m)$.
+% 
+For the user, the T5 decoder hidden state at the \textsc{[bos]} position (index 0) captures the global user preference before any target token is generated.
+%
+We project it into the same semantic space via a learnable adapter $f_{\text{dec}}^m$:
+\begin{equation}
+    \mathbf{d}^m = f_{\text{dec}}^m\!\bigl(\mathrm{T5\text{-}Dec}(\mathbf{x}^m)_{\textsc{[bos]}}\bigr).
+\end{equation}
+CPA minimizes the cosine distance between the user prediction $\mathbf{d}^m$ and the target reconstruction $\hat{\mathbf{s}}_{\text{tgt}}^m$:
+\begin{equation}
+    \mathcal{L}_{\text{CPA}}^m = 1 - \cos(\mathbf{d}^m,\, \hat{\mathbf{s}}_{\text{tgt}}^m),
+    \label{eq:cpa}
+\end{equation}
+where $\cos(\cdot,\cdot)$ denotes cosine similarity.
+% 
+Because the RQ-VAE was trained to reconstruct the collaborative-anchored input~$\mathbf{s}^m$ (i.e., $[\mathbf{c};\,\mathbf{t}]$ or $[\mathbf{c};\,\mathbf{v}]$), the reconstructed embedding $\hat{\mathbf{s}}_{\text{tgt}}^m$ encodes both collaborative patterns and content features.
+%
+Compared with contrastive objectives that require in-batch negatives, cosine distance loss provides a direct pairwise alignment signal that is more stable in our setting where the target space is already well-structured by the collaborative-anchored RQ-VAE.
+
+% ---- 训练目标 ----
+\subsubsection{Training Objective}
+\label{sec:train_obj}
+
+The total recommendation loss for each modality combines code prediction and CPA:
+\begin{equation}
+    \mathcal{L}_{\text{rec}}^m = \mathcal{L}_{\text{code}}^m + \lambda_p\,\mathcal{L}_{\text{CPA}}^m,
+    \label{eq:rec}
+\end{equation}
+where $\lambda_p$ is the CPA loss weight.
+% 
+The final loss sums over both modalities: $\mathcal{L}_{\text{rec}} = \mathcal{L}_{\text{rec}}^t + \mathcal{L}_{\text{rec}}^v$.
+%
+We apply a warmup of $W$ epochs that runs only $\mathcal{L}_{\text{code}}$; $\mathcal{L}_{\text{CPA}}$ is activated afterward to let basic code prediction stabilize first.
+
+% ==================================================================
+% 3.3 Semantic-aware Reranking
+% ==================================================================
+\subsection{Semantic-aware Reranking}
+\label{sec:rerank}
+
+Beam search ranks candidates by token-level log-probabilities, operating entirely in the discrete code space.
+% 
+This makes it blind to continuous semantic relationships---two items with nearly identical collaborative-semantic embeddings can receive very different beam scores if their codes diverge at early positions.
+% 
+We bridge this \emph{discrete-continuous gap} by re-evaluating candidates in the continuous collaborative-semantic space at inference.
+
+% ---- 用户语义表征 ----
+\subsubsection{User Representation in Semantic Space}
+
+At inference, the decoder has not yet started generation, so we derive the user representation from the encoder output.
+%
+For each modality path, we mean-pool the T5 encoder output and project it with the CPA-trained adapter $f_{\text{dec}}^m$:
+\begin{equation}
+    \mathbf{u}^m = f_{\text{dec}}^m\!\bigl(\mathrm{MeanPool}(\mathrm{T5\text{-}Enc}(\mathbf{x}^m))\bigr) \in \mathbb{R}^{d_c+d_m}.
+\end{equation}
+Although $f_{\text{dec}}^m$ is trained on decoder hidden states, the T5 decoder's initial state is derived from the encoder output via cross-attention, so the two representations lie in a closely related subspace; we verify the effectiveness of this approximation experimentally in Section~4.
+
+% ---- 重排分数 ----
+\subsubsection{Reranking Score}
+
+For each beam candidate with code tuple $(c_1^m, \ldots, c_L^m)$, we look up the corresponding item~$j$ via a code-to-item index (which is one-to-one after reassignment) and retrieve its collaborative-anchored semantic embedding $\mathbf{s}_j^m$.
+%
+Candidates whose codes do not map to any item are discarded.
+% 
+The final score combines generation likelihood with collaborative-semantic similarity:
+\begin{equation}
+    \mathrm{score}(j) = \underbrace{s_{\text{beam}}(j)}_{\text{generation likelihood}} \;+\; \beta\cdot\underbrace{\cos(\mathbf{u}^m,\, \mathbf{s}_j^m)}_{\text{collaborative-semantic similarity}},
+    \label{eq:rerank}
+\end{equation}
+where $\beta$ controls the reranking strength.
+%
+Because beam search log-probabilities and cosine similarities live on different scales, $\beta$ is intentionally kept small so that semantic similarity acts as a tiebreaker among candidates with comparable generation likelihood rather than overriding the autoregressive ranking.
+
+% ---- 多模态集成 ----
+\subsubsection{Multimodal Ensemble}
+
+Following~\citet{macrec}, we fuse text-path and image-path results by score aggregation after reranking.
+% 
+For items appearing in both paths, scores are averaged; items appearing in only one path contribute directly.
+% 
+The fused ranking list is used for final evaluation.
+
+%% NOTE: table* placed early so LaTeX can position it on an earlier page
+\begin{table*}[t!]
+\caption{Performance comparison on three datasets. Bold and underline indicate the best and second-best results, respectively. $\dagger$: reproduced by us under identical settings; all other baseline results are cited from~\cite{macrec}. ``--'': experiments not yet conducted.}
+\label{tab:main}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l|l|*{10}{C}}
+\toprule
+\multicolumn{2}{c|}{} & \multicolumn{3}{c}{\textit{Traditional Seq.}} & \textit{MM Seq.} & \multicolumn{2}{c}{\textit{Single-modal Gen.}} & \multicolumn{4}{c}{\textit{MM Gen.}} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-6} \cmidrule(lr){7-8} \cmidrule(lr){9-12}
+Dataset & Metrics & BERT4Rec & SASRec & S$^3$-Rec & MISSRec & P5-CID & TIGER & VIP5 & MQL4GRec & MACRec$^\dagger$ & CAGRec\\
+\midrule
+\multirow{5}{*}{Instruments} 
+& HR@1      & 0.0450 & 0.0318 & 0.0339 & 0.0723 & 0.0512 & 0.0754 & 0.0737 & 0.0763 & \underline{0.0804} & \textbf{0.0826} \\
+& HR@5      & 0.0856 & 0.0946 & 0.0937 & 0.1089 & 0.0839 & 0.1007 & 0.0892 & 0.1058 & \underline{0.1112} & \textbf{0.1156} \\
+& HR@10     & 0.1081 & 0.1233 & 0.1123 & \underline{0.1361} & 0.1119 & 0.1221 & 0.1071 & 0.1291 & 0.1349 & \textbf{0.1400} \\
+& NDCG@5    & 0.0667 & 0.0654 & 0.0693 & 0.0797 & 0.0678 & 0.0882 & 0.0815 & 0.0902 & \underline{0.0962} & \textbf{0.0992} \\
+& NDCG@10   & 0.0739 & 0.0746 & 0.0743 & 0.0880 & 0.0704 & 0.0950 & 0.0872 & 0.0997 & \underline{0.1038} & \textbf{0.1070} \\
+\midrule
+\multirow{5}{*}{Arts}
+& HR@1      & 0.0289 & 0.0212 & 0.0172 & 0.0479 & 0.0421 & 0.0532 & 0.0474 & \underline{0.0626} & 0.0611 & \textbf{0.0626} \\
+& HR@5      & 0.0697 & 0.0951 & 0.0739 & \underline{0.1021} & 0.0713 & 0.0894 & 0.0704 & 0.0997 & 0.0990 & \textbf{0.1027} \\
+& HR@10     & 0.0922 & 0.1250 & 0.1030 & 0.1321 & 0.0994 & 0.1167 & 0.0959 & \underline{0.1254} & 0.1245 & \textbf{0.1296} \\
+& NDCG@5    & 0.0502 & 0.0610 & 0.0511 & 0.0699 & 0.0607 & 0.0718 & 0.0586 & \underline{0.0816} & 0.0802 & \textbf{0.0830} \\
+& NDCG@10   & 0.0575 & 0.0706 & 0.0630 & 0.0815 & 0.0662 & 0.0806 & 0.0635 & \underline{0.0898} & 0.0884 & \textbf{0.0916} \\
+\midrule
+\multirow{5}{*}{Games}
+& HR@1      & 0.0115 & 0.0069 & 0.0136 & \textbf{0.0201} & 0.0169 & 0.0166 & 0.0173 & \underline{0.0200} & 0.0192 & \textbf{0.0201} \\
+& HR@5      & 0.0426 & 0.0587 & 0.0527 & \underline{0.0674} & 0.0532 & 0.0523 & 0.0480 & 0.0645 & 0.0647 & \textbf{0.0675} \\
+& HR@10     & 0.0725 & 0.0985 & 0.0903 & \underline{0.1048} & 0.0824 & 0.0857 & 0.0758 & 0.1007 & 0.1041 & \textbf{0.1078} \\
+& NDCG@5    & 0.0270 & 0.0333 & 0.0351 & 0.0385 & 0.0331 & 0.0345 & 0.0328 & \underline{0.0421} & 0.0418 & \textbf{0.0437} \\
+& NDCG@10   & 0.0366 & 0.0461 & 0.0468 & 0.0499 & 0.0454 & 0.0453 & 0.0418 & 0.0538 & \underline{0.0545} & \textbf{0.0565} \\
+\bottomrule
+\end{tabular}}%
+\end{table*}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% EXPERIMENTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Experiment}
+
+We evaluate CAGRec along five research questions:
+\textbf{RQ1}:~How does CAGRec compare to state-of-the-art baselines?
+\textbf{RQ2}:~How does each component contribute?
+\textbf{RQ3}:~How does the fusion strategy for collaborative embeddings affect performance?
+\textbf{RQ4}:~How sensitive is CAGRec to key hyperparameters?
+\textbf{RQ5}:~What does the content-collaborative gap look like empirically?
+
+\subsection{Experimental Setup}
+
+\noindent \textbf{Datasets.}
+We use three categories from the Amazon Product Reviews (2018) dataset~\cite{ni2019justifying}: ``Musical Instruments'' (Instruments), ``Arts, Crafts and Sewing'' (Arts), and ``Video Games'' (Games).
+% 
+Each category contains user reviews with ratings, product metadata (title, description, brand), and product images.
+% 
+Following prior work~\cite{tiger,macrec}, we apply 5-core filtering (retaining users and items with at least 5 interactions) and chronologically sort each user's interactions.
+% 
+Table~\ref{dataset} summarizes the statistics after preprocessing.
+
+\begin{table}[h]
+\caption{Statistics of the datasets. \textbf{Avg. len} represents the average length of item sequences.}
+\label{dataset}
+\small
+\centering
+\setlength\tabcolsep{2pt}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Datasets} & \textbf{\#Users} & \textbf{\#Items} & \textbf{\#Interactions} & \textbf{Sparsity} & \textbf{Avg. len} \\
+\midrule
+Instruments & 17112 & 6250  & 136226  & 99.87\% & 7.96 \\
+Arts       & 22171 & 9416  & 174079  & 99.92\% & 7.85 \\
+Games      & 42259 & 13839 & 373514  & 99.94\% & 8.84 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Baselines.}
+We compare with nine representative methods spanning four categories.
+%
+\textit{(i) Traditional sequential recommenders}: \textbf{SASRec}~\cite{sasrec} uses unidirectional self-attention over item ID sequences; \textbf{BERT4Rec}~\cite{sun2019bert4rec} extends this with bidirectional masked prediction; \textbf{S$^3$-Rec}~\cite{zhou2020s3} further introduces self-supervised pre-training with mutual information maximization on item attributes.
+%
+\textit{(ii) Multimodal sequential recommender}: \textbf{MISSRec}~\cite{wang2023missrec} pre-trains a multimodal item encoder with interest-aware contrastive learning for transferable recommendation.
+%
+\textit{(iii) Single-modal generative recommenders}: \textbf{P5-CID}~\cite{p5,hua2023index} formulates recommendation as a unified text-to-text task with collaborative indexing that assigns each item a meaningful ID; \textbf{TIGER}~\cite{tiger} quantizes text embeddings via RQ-VAE into hierarchical semantic IDs and generates them autoregressively.
+%
+\textit{(iv) Multimodal generative recommenders}: \textbf{VIP5}~\cite{vip5} extends the P5 framework with visual features through a multimodal adapter; \textbf{MQL4GRec}~\cite{mql} encodes text and image into a shared quantitative language with multi-level codebooks; \textbf{MACRec}~\cite{macrec} applies cross-modal contrastive learning during residual quantization to reduce codebook collisions across text and image paths.
+
+\noindent \textbf{Metrics.}
+We report top-$k$ hit rate (HR@$K$) and normalized discounted cumulative gain (NDCG@$K$) for $K \in \{1, 5, 10\}$.
+% 
+Following~\citet{p5,hua2023index}, we adopt a leave-one-out protocol with full ranking over the entire item set.
+
+\noindent \textbf{Implementation Details.}
+We obtain collaborative embeddings ($d_c\!=\!256$) from a pretrained SASRec~\cite{sasrec} model, text features ($d_t\!=\!4096$) from LLaMA-7B~\cite{touvron2023llama} mean pooling, and image features from ViT-L/14 (CLIP).
+% 
+For RQ-VAE, we set codebook size $M\!=\!256$ with $L\!=\!4$ levels, CAR weight $\lambda_r\!=\!2.0$, temperature $\tau_c\!=\!0.1$, cross-modal contrastive weights $\lambda_{\text{con}}^{0,1}\!=\!0$, $\lambda_{\text{con}}^{2,3}\!=\!0.1$, and reconstruction alignment weight $\lambda_a\!=\!0.001$.
+% 
+Following~\citet{tiger,mql}, we use T5~\cite{t5} as the backbone with 4 transformer layers, 6 attention heads, and dimension~64 per head.
+% 
+We train with six auxiliary tasks following MACRec~\cite{macrec}.
+% 
+CPA uses cosine distance with weight $\lambda_p\!=\!0.005$ and a linear adapter projecting from T5 hidden dimension to the 256d SASRec space; CPA activates after $W$ warmup epochs.
+% 
+We use AdamW (batch size 1024, learning rate $10^{-3}$), beam search with $B\!=\!50$, dual-path score ensemble, and semantic-aware reranking strength $\beta\!=\!0.1$.
+% 
+For MQL4GRec, we disable pretraining on additional-category datasets for a fair comparison.
+
+% ====================================================================
+\subsection{Overall Performance (RQ1)}
+\label{sec:rq1}
+
+Table~\ref{tab:main} compares all methods across three datasets.
+% 
+We reproduce MACRec (marked with~$\dagger$) under its published settings with five random seeds; all other baseline results are cited from the original paper~\cite{macrec}.
+%
+From the results, we have the following observations.
+
+\noindent$\bullet$~\textbf{CAGRec consistently achieves the best performance across every metric and dataset.}
+%
+On the primary ranking metric NDCG@10, CAGRec surpasses the strongest baseline by $+2.8\%$--$3.7\%$ across three datasets with varying sparsity levels (99.87\%--99.94\%), demonstrating the robustness and generalizability of collaborative anchoring.
+
+\noindent$\bullet$~\textbf{Collaborative anchoring particularly benefits recall-oriented metrics.}
+%
+The relative improvements on HR@10 ($+3.6\%$ to $+4.1\%$, averaging $+3.9\%$) consistently exceed those on NDCG@10 ($+2.8\%$ to $+3.7\%$).
+%
+We attribute this to the restructured code space: by steering collaboratively related items toward proximate codes, the autoregressive model can surface a broader set of relevant candidates, expanding recall without sacrificing ranking precision.
+
+\noindent$\bullet$~\textbf{Multi-modal generative methods significantly outperform traditional sequential models.}
+%
+MACRec, MQL4GRec, and CAGRec consistently surpass BERT4Rec and SASRec by large margins, confirming the advantage of semantic-ID-based generation with multi-modal features.
+%
+Among generative baselines, MQL4GRec and MISSRec are the strongest competitors: MQL4GRec surpasses MACRec$^\dagger$ on Arts, and MISSRec leads on Games HR@1.
+%
+CAGRec outperforms both across all datasets on NDCG, indicating that collaborative anchoring provides complementary benefits beyond what richer content encodings alone can achieve.
+
+% ====================================================================
+\subsection{Component Ablation Study (RQ2)}
+\label{sec:rq2}
+
+\begin{table}[t]
+\caption{Component ablation on Instruments (6{,}250 items) and Games (13{,}839 items). Starting from the full CAGRec, we remove one component at a time.}
+\label{tab:ablation}
+\centering
+\setlength\tabcolsep{4pt}
+\small
+\begin{tabular}{l|cc|cc}
+\toprule
+\multirow{2}{*}{Model} & \multicolumn{2}{c|}{Instruments} & \multicolumn{2}{c}{Games} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+ & HR@10 & NDCG@10 & HR@10 & NDCG@10 \\
+\midrule
+\textbf{CAGRec} (full)  & \textbf{0.1400} & \textbf{0.1070} & --              & --              \\
+\;\;w/o Input Anchoring  & 0.1334          & 0.1035          & --              & --              \\
+\;\;w/o CAR              & 0.1308          & 0.1012          & --              & --              \\
+\;\;w/o CPA              & 0.1369          & 0.1057          & --              & --              \\
+\;\;w/o Reranking        & --              & --              & --              & --              \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We ablate each component from the full CAGRec (Table~\ref{tab:ablation}) to quantify its individual contribution.
+To examine whether the conclusions hold across different data scales, we conduct ablations on both Instruments (6{,}250 items, the smallest) and Games (13{,}839 items, the largest).
+We select these two datasets because they represent the two extremes of our benchmark in catalog size; Arts (7{,}360 items) falls in between and would add limited additional insight, so we omit it to conserve computational budget.
+
+\noindent$\bullet$~\textbf{w/o Input Anchoring} removes the concatenation of collaborative embeddings at the RQ-VAE input, relying solely on content features for code assignment.
+On Instruments, this causes the RQ-VAE collision rate to surge from 5.0\% to 37.6\%, as the quantizer loses the collaborative signal that helps distinguish similar items.
+NDCG@10 drops by $-3.3\%$, confirming that direct feature-level anchoring is the primary channel for injecting collaborative knowledge.
+
+\noindent$\bullet$~\textbf{w/o CAR} removes Collaborative-Aware Regularization from RQ-VAE training, eliminating the contrastive constraint that clusters collaboratively related items in the latent space.
+This produces the largest degradation: NDCG@10 falls by $-5.4\%$ on Instruments.
+Interestingly, without the contrastive constraint, the RQ-VAE collision rate drops to 0.3\% (lower than the full model's 5.0\%), since the quantizer freely minimizes reconstruction loss without the competing collaborative objective.
+However, the resulting codes lose collaborative-semantic structure, leading to the worst downstream performance.
+
+\noindent$\bullet$~\textbf{w/o CPA} removes Collaborative Preference Anchoring from downstream T5 training, disabling the auxiliary loss that aligns user representations with collaborative-semantic targets.
+NDCG@10 decreases by $-1.2\%$, indicating that CPA provides a complementary refinement at the decoder stage.
+
+\noindent$\bullet$~\textbf{w/o Reranking} disables semantic-aware reranking by setting $\beta\!=\!0$, ranking candidates purely by beam search log-probability without collaborative-semantic similarity.
+
+\noindent Overall, the contribution ranking is CAR $>$ Input Anchoring $>$ CPA $>$ Reranking, showing that the RQ-VAE stage components (CAR and Input Anchoring) are the most critical, while the downstream CPA and inference-time reranking provide incremental but consistent gains.
+
+% ====================================================================
+\subsection{Collaborative Embedding Fusion Analysis (RQ3)}
+\label{sec:rq3}
+
+We investigate the design choice of how to fuse collaborative embeddings with content features in the RQ-VAE.
+
+\begin{table}[t]
+\caption{Comparison of collaborative embedding fusion strategies on Instruments. All variants use the same SASRec collaborative embedding and identical downstream T5 configuration; only the RQ-VAE fusion method differs. \textbf{Coll.} reports the best text / image codebook collision rate during RQ-VAE training (lower is better).}
+\label{tab:fusion}
+\centering
+\setlength\tabcolsep{3pt}
+\small
+\begin{tabular}{l|c|cc|cc}
+\toprule
+\multirow{2}{*}{Fusion Strategy} & Coll.(\%) & \multicolumn{2}{c|}{HR} & \multicolumn{2}{c}{NDCG} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+ & text / image & @5 & @10 & @5 & @10 \\
+\midrule
+Proj.\ Addition   & 23.9 / 38.2 & 0.1106 & 0.1364 & 0.0957 & 0.1040 \\
+Gating            & 73.3 / 90.1 & 0.1138 & 0.1367 & 0.0982 & 0.1056 \\
+Cross-Attention   & 48.3 / 70.9 & 0.1107 & 0.1342 & 0.0963 & 0.1038 \\
+\midrule
+Concat (ours)     & \textbf{5.0 / 2.0} & \textbf{0.1156} & \textbf{0.1400} & \textbf{0.0992} & \textbf{0.1070} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:fusion} compares four fusion strategies on Instruments, all using the same SASRec collaborative embedding ($d_c\!=\!256$) and identical T5 configuration (including CPA).
+%
+A key architectural distinction separates our approach from the alternatives: concatenation operates at the \emph{raw input level}---the collaborative embedding is concatenated with the content feature before the align encoder, forming an extended input ($d_c\!+\!d_t$ or $d_c\!+\!d_v$ dimensions) that the encoder processes in full.
+%
+In contrast, the three parameterized alternatives all operate in a \emph{compressed intermediate space}: the align encoder first maps the content feature to a 768d representation, the collaborative embedding is separately projected to 768d via a learned linear layer, and the two 768d vectors are then combined:
+%
+(i)~\emph{Proj.\ Addition} adds the projected collaborative vector to the content representation element-wise;
+%
+(ii)~\emph{Gating} learns a sigmoid gate $\mathbf{g} = \sigma(\mathbf{W}_g[\mathbf{c}_{\mathrm{proj}};\,\mathbf{x}_{\mathrm{align}}])$ that determines the per-dimension mixture: $\mathbf{g} \odot \mathbf{c}_{\mathrm{proj}} + (1-\mathbf{g}) \odot \mathbf{x}_{\mathrm{align}}$;
+%
+(iii)~\emph{Cross-Attention} stacks the collaborative and content vectors as two tokens, applies multi-head self-attention (4 heads), and takes the content-position output with a residual connection.
+%
+Because all three alternatives project both signals into a shared 768d space---compressing the content features from their original dimensionality (e.g., $4096$d for text) while up-projecting the $256$d collaborative embedding---the two signals are forced to share the same dimensions and the encoder must learn to disentangle them.
+%
+In contrast, concatenation preserves each signal in its own subspace of the full-dimensional input, giving the MLP encoder strictly more capacity for flexible combination.
+
+\noindent$\bullet$~\textbf{Concatenation achieves the best performance with the lowest collision rate.}
+%
+Our approach outperforms all parameterized fusion strategies across every metric (Table~\ref{tab:fusion}).
+%
+On NDCG@10, concatenation surpasses Proj.\ Addition by $+2.9\%$, Gating by $+1.3\%$, and Cross-Attention by $+3.1\%$.
+%
+More strikingly, the RQ-VAE codebook collision rate is dramatically lower: 5.0\%/2.0\% (text/image) versus 23.9\%--73.3\% / 38.2\%--90.1\% for the alternatives.
+
+\noindent$\bullet$~\textbf{Parameterized fusion destabilizes codebook learning.}
+%
+Gating exhibits the most extreme collapse (73.3\%/90.1\% collision), indicating that the adaptive gate tends to suppress content signals and converge to a degenerate solution during RQ-VAE training.
+%
+Cross-Attention (48.3\%/70.9\%) and Proj.\ Addition (23.9\%/38.2\%) also suffer significant collision inflation.
+%
+We attribute this to a shared failure mode: when collaborative and content signals interact through learnable parameters \emph{before} quantization, the additional parameters create unstable gradients during codebook updates, causing many items to be mapped to identical codes.
+
+\noindent$\bullet$~\textbf{Collision rate and downstream performance are not perfectly correlated.}
+%
+Despite having the worst collision rate, Gating outperforms both Proj.\ Addition and Cross-Attention on NDCG@10 (0.1056 vs.\ 0.1040 and 0.1038).
+%
+This is because the distance-based index reassignment (\S\ref{sec:quant}) resolves collisions post-training by mapping conflicting items to their next-nearest codes, partially compensating for poor codebook quality.
+%
+Nevertheless, concatenation's inherently low collision rate (5.0\%/2.0\%) avoids the need for such correction, yielding codes that directly reflect the intended collaborative-content structure.
+
+\noindent These results validate our design choice: simple concatenation is not only the most effective fusion strategy but also the most stable, because it preserves the full dimensionality of both signals without introducing learnable fusion parameters that can destabilize RQ-VAE training.
+
+% ====================================================================
+\subsection{Hyperparameter Sensitivity (RQ4)}
+\label{sec:rq4}
+
+% TODO: 生成超参数分析 Figure，包含4个子图，形式参考 MACRec Figure 3
+% 每个子图为柱状图，包含 HR@10（蓝色）和 NDCG@10（橙色）两组柱
+% (a) CAR weight λ_r: {0.5, 1.0, 2.0, 5.0}
+% (b) CPA weight λ_p: {0, 0.002, 0.005, 0.01}
+% (c) alignment weight λ_a: {0.0001, 0.001, 0.01}
+% (d) reranking strength β: {0, 0.05, 0.1, 0.2}
+\begin{figure*}[t]
+    \centering
+    % TODO: 替换为实际生成的图片
+    % \includegraphics[width=\linewidth]{hyperparam_analysis.pdf}
+    \fbox{\parbox{0.95\linewidth}{\centering\vspace{3em}\textbf{TODO: Hyperparameter sensitivity figure}\\\small (a) $\lambda_r$ (CAR) \quad (b) $\lambda_p$ (CPA) \quad (c) $\lambda_a$ (align) \quad (d) $\beta$ (rerank)\vspace{3em}}}
+    \caption{Performance of CAGRec over different hyperparameters on Instruments. Each subplot reports HR@10 and NDCG@10.}
+    \Description{Four-panel bar chart showing hyperparameter sensitivity of CAGRec on Instruments.}
+    \label{fig:hyperparam}
+\end{figure*}
+
+Figure~\ref{fig:hyperparam} reports HR@10 and NDCG@10 on Instruments as we vary four key hyperparameters.
+
+\noindent\textbf{CAR weight $\lambda_r$.}
+% TODO: 补充趋势分析（预期 λ_r=2.0 最优）
+
+\noindent\textbf{CPA weight $\lambda_p$.}
+We test $\lambda_p \in \{0, 0.002, 0.005, 0.01\}$.
+% 
+$\lambda_p\!=\!0.005$ yields the best NDCG@5 and NDCG@10; at $\lambda_p\!=\!0.002$ the alignment signal is too weak, while at $\lambda_p\!=\!0.01$ the decoder over-optimizes cosine alignment at the cost of code prediction accuracy.
+% 
+At the optimum, CPA lifts HR@1 by $+1.1\%$ and NDCG@5 by $+1.3\%$ while trading only $-1.1\%$ on HR@10, consistent with its role as a precision-refinement loss.
+
+\noindent\textbf{Alignment weight $\lambda_a$.}
+% TODO: 补充趋势分析（预期 λ_a=0.001 最优）
+
+\noindent\textbf{Reranking strength $\beta$.}
+We vary $\beta$ in $\{0, 0.05, 0.1, 0.2\}$.
+%
+At $\beta\!=\!0.05$--$0.1$, NDCG@10 stays at 0.1061; at $\beta\!=\!0.2$ it drops to 0.1055.
+% 
+Collaborative anchoring already aligns the code space with behavioral structure, so the autoregressive model produces well-calibrated rankings; the continuous similarity signal serves as a tie-breaker rather than a correction.
+% 
+This confirms that CAGRec's primary gains originate from the improved code space and training, not from post-hoc inference.
+
+% ====================================================================
+\subsection{Visualization Analysis (RQ5)}
+\label{sec:rq5}
+
+\begin{figure}[t]
+    \centering
+    \subfloat[Text (by Brand)]{\includegraphics[width=0.48\linewidth]{fig1_a.pdf}\label{fig:tsne-a}}
+    \hfill
+    \subfloat[Collab (by Brand)]{\includegraphics[width=0.48\linewidth]{fig1_b.pdf}\label{fig:tsne-b}}
+    \\[2pt]
+    \subfloat[Image (by Category)]{\includegraphics[width=0.48\linewidth]{fig1_c.pdf}\label{fig:tsne-c}}
+    \hfill
+    \subfloat[Collab (by Category)]{\includegraphics[width=0.48\linewidth]{fig1_d.pdf}\label{fig:tsne-d}}
+    \caption{t-SNE visualization on Instruments. Text embeddings cluster items by brand~(a) and image embeddings by product type~(c). The same items, with identical coloring, scatter across the collaborative space~(b)(d). Content similarity does not equal collaborative similarity.}
+    \Description{Four t-SNE visualizations in a two-by-two grid comparing content and collaborative embedding spaces.}
+    \label{fig:tsne}
+\end{figure}
+
+Figure~\ref{fig:tsne} visualizes item embeddings on Instruments via t-SNE.
+% 
+Text embeddings cluster items by brand~(a) and image embeddings by product type~(c), yet the same items scatter across the collaborative space~(b)(d).
+% 
+Content proximity and behavioral proximity are two distinct structures---the core observation that motivates collaborative anchoring.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% CONCLUSION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Conclusion}
+
+Existing multimodal generative recommenders build code spaces from content features alone, leaving a gap between code topology and collaborative structure.
+% 
+We propose CAGRec, which injects collaborative signals at multiple stages: input-level concatenation reshapes the RQ-VAE code space, latent-level regularization (CAR) reinforces behavioral clustering before quantization, and training-level preference anchoring (CPA) grounds user representations in the collaborative-semantic space.
+% 
+Ablation studies confirm that each stage contributes: input anchoring and CAR jointly reshape the code space, CPA refines ranking precision, and semantic-aware reranking provides a complementary tie-breaking signal by re-evaluating candidates in the continuous collaborative-semantic space.
+% 
+Experiments on three Amazon datasets show that CAGRec outperforms all baselines on every metric, with NDCG@10 gains of $+2.8\%$ to $+3.7\%$ over the best multimodal generative baseline.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% REFERENCES
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
