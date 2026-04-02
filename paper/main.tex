@@ -59,9 +59,7 @@ We propose Collaborative-Anchor guided multimodal Generative Recommender (CAGRec
 % 
 For the content-collaborative gap, we anchor the cross-modal RQ-VAE with collaborative embeddings derived from user interaction sequences, steering both text and image code spaces toward behavioral structure.
 %
-% The anchored RQ-VAE decoder gives rise to a collaborative-semantic space that jointly encodes behavioral and content signals. Existing contrastive alignment objectives, when operating in this enriched space, capture fine-grained collaborative similarity that code-level supervision alone cannot express.
-% [已确认: 老师批准修改摘要，以下为新版本，显式提及 CAR]
-We further propose Collaborative-Aware Regularization~(CAR), a contrastive loss that clusters collaboratively related items in the latent space before code assignment, ensuring behavioral proximity survives quantization.
+We further propose Collaborative-Aware Regularization (CAR), a contrastive loss that clusters collaboratively related items in the latent space before code assignment, ensuring behavioral proximity survives quantization.
 %
 The anchored RQ-VAE decoder gives rise to a collaborative-semantic space that jointly encodes behavioral and content signals.
 %
@@ -69,7 +67,7 @@ For the discrete-continuous gap, we design a semantic-aware reranking strategy t
 % 
 Extensive experiments on three recommendation datasets show that CAGRec consistently outperforms state-of-the-art baselines.
 % 
-Our codes are available at \url{https://anonymous.4open.science/r/CAGRec}.
+Our codes are available at https://anonymous.4open.science/r/CAGRec.
 \end{abstract}
 
 %%
@@ -112,7 +110,7 @@ Our codes are available at \url{https://anonymous.4open.science/r/CAGRec}.
     \label{fig:intro}
 \end{figure}
 \section{Introduction}
-Recommendation systems help users navigate information overload across e-commerce~\cite{amazonrec1,taobaorec2}, social media~\cite{davidson2010youtube,dnn}, and news services~\cite{news_rec}.
+Recommendation systems help users navigate information overload across e-commerce~\cite{amazonrec1,taobaorec2,din}, social media~\cite{davidson2010youtube,dnn}, and news services~\cite{news_rec,nrms}.
 %
 With the rapid progress of large language models (LLMs), generative recommendation (GR) has emerged as a promising paradigm~\cite{wang2023generative,li2024large} that recasts recommendation as next-token prediction.
 %
@@ -122,7 +120,7 @@ A central question in GR is how to construct high-quality semantic IDs.
 %
 Early methods quantize single-modality (text) embeddings through RQ-VAE~\cite{image_rqvae,tiger}.
 %
-Later work improves tokenization via collaborative regularization~\cite{letter} or language model adaptation~\cite{LCRec}.
+Later work improves tokenization via collaborative regularization~\cite{letter}, language model adaptation~\cite{LCRec}, or hierarchical decomposition~\cite{cofirec}.
 %
 However, a single modality offers limited discriminability.
 %
@@ -143,11 +141,9 @@ Existing multi-modal GR methods build code spaces primarily from content feature
 %
 Content similarity, however, does not equal collaborative similarity.
 %
-As shown in Figure~\ref{fig:intro}, given a user who purchased an electric guitar, a tuner, and a guitar pick, content-only methods assign the highest scores to a guitar cable (0.82) and a guitar case (0.79)---the cable's description shares instrument-accessory keywords with the guitar, and the case's guitar-shaped silhouette yields high visual similarity---while the ground truth amplifier receives only 0.41 and ranks last, because its description is dominated by audio-electronics specifications (wattage, channels, EQ, reverb) and its boxy form bears no visual resemblance to the guitar.
+As shown in Figure~\ref{fig:intro}, given a user who purchased an electric guitar, a tuner, and a guitar pick, content-only methods rank a guitar cable first (0.82) and a guitar case second (0.79)---both share surface-level textual or visual similarity with the guitar---while the ground truth amplifier ranks last (0.41), because its audio-electronics description and boxy form differ drastically from the guitar.
 %
-By extracting collaborative embeddings from the interaction history and anchoring item representations with these embeddings, the amplifier rises to rank~\#1 (score 0.91): users who buy guitars frequently purchase amplifiers next.
-%
-The model also surfaces an effects pedal (0.80) that content-only methods entirely miss.
+With collaborative anchoring, the amplifier rises to rank~\#1 (0.91) because co-purchase patterns anchor item representations, and the model also surfaces an effects pedal (0.80) that content-only methods entirely miss.
 %
 When the code space primarily reflects content proximity, collaboratively related items receive distant codes, and the autoregressive decoder must predict across a structure that conflicts with the recommendation objective.
 
@@ -256,7 +252,7 @@ Each item $i \in \mathcal{I}$ is associated with a text description and an image
 For user $u$ with interaction history $[i_1, \ldots, i_n]$, the goal is to predict the next item $i_{n+1}$.
 
 \noindent\textbf{Overview.}
-Figure~\ref{fig:model} illustrates CAGRec, which injects collaborative signals at three stages.
+As illustrated in Figure~\ref{fig:model}, CAGRec injects collaborative signals at three stages.
 %
 To bridge the \emph{content-collaborative gap}, we anchor the cross-modal RQ-VAE with collaborative embeddings from user interaction sequences, steering code spaces toward behavioral structure~(\S\ref{sec:quant}).
 %
@@ -506,7 +502,7 @@ Dataset & Metrics & BERT4Rec & SASRec & S$^3$-Rec & MISSRec & P5-CID & TIGER & V
 \multirow{5}{*}{Arts}
 & HR@1      & 0.0289 & 0.0212 & 0.0172 & 0.0479 & 0.0421 & 0.0532 & 0.0474 & \textbf{0.0626} & \underline{0.0611} & \textbf{0.0626} \\
 & HR@5      & 0.0697 & 0.0951 & 0.0739 & \underline{0.1021} & 0.0713 & 0.0894 & 0.0704 & 0.0997 & 0.0990 & \textbf{0.1027} \\
-& HR@10     & 0.0922 & 0.1250 & 0.1030 & 0.1321 & 0.0994 & 0.1167 & 0.0959 & \underline{0.1254} & 0.1245 & \textbf{0.1296} \\
+& HR@10     & 0.0922 & 0.1250 & 0.1030 & \underline{0.1321} & 0.0994 & 0.1167 & 0.0959 & 0.1254 & 0.1245 & \textbf{0.1325} \\
 & NDCG@5    & 0.0502 & 0.0610 & 0.0511 & 0.0699 & 0.0607 & 0.0718 & 0.0586 & \underline{0.0816} & 0.0802 & \textbf{0.0830} \\
 & NDCG@10   & 0.0575 & 0.0706 & 0.0630 & 0.0815 & 0.0662 & 0.0806 & 0.0635 & \underline{0.0898} & 0.0884 & \textbf{0.0916} \\
 \midrule
@@ -541,7 +537,7 @@ Each category contains user reviews with ratings, product metadata (title, descr
 % 
 Following prior work~\cite{tiger,macrec}, we apply 5-core filtering (retaining users and items with at least 5 interactions) and chronologically sort each user's interactions.
 % 
-Table~\ref{dataset} summarizes the statistics after preprocessing.
+The statistics after preprocessing are summarized in Table~\ref{dataset}.
 
 \begin{table}[h]
 \caption{Statistics of the datasets. \textbf{Avg. len} represents the average length of item sequences.}
@@ -601,7 +597,7 @@ For MQL4GRec, we disable pretraining on additional-category datasets for a fair 
 \subsection{Overall Performance (RQ1)}
 \label{sec:rq1}
 
-Table~\ref{tab:main} compares all methods across three datasets.
+As shown in Table~\ref{tab:main}, we compare all methods across three datasets.
 %
 We reproduce MACRec (marked with~$\dagger$) under its published settings; all other baseline results are cited from~\cite{macrec}.
 
@@ -611,7 +607,7 @@ On NDCG@10, CAGRec surpasses the strongest baseline by $+2.0\%$--$3.7\%$ across 
 
 \noindent$\bullet$~\textbf{Improvements are consistent across both recall and ranking metrics.}
 %
-Beyond the NDCG@10 gains, HR@10 improves by $+2.9\%$ to $+3.4\%$ across all three datasets, confirming that collaborative anchoring helps the autoregressive model surface a broader set of relevant candidates.
+Beyond the NDCG@10 gains, CAGRec also achieves the highest HR@10 on all three datasets, with improvements of $+2.9\%$ on both Instruments and Games over MISSRec, confirming that collaborative anchoring helps the autoregressive model surface a broader set of relevant candidates.
 
 \noindent$\bullet$~\textbf{Among generative baselines, MQL4GRec and MISSRec are the strongest competitors.}
 %
@@ -715,12 +711,12 @@ Proj.\ Addition   & 23.9 / 38.2 & 0.1106 & 0.1364 & 0.0957 & 0.1040 \\
 Gating            & 73.3 / 90.1 & 0.1138 & 0.1367 & 0.0982 & 0.1056 \\
 Cross-Attention   & 48.3 / 70.9 & 0.1107 & 0.1342 & 0.0963 & 0.1038 \\
 \midrule
-Concat (ours)     & \textbf{5.0 / 2.0} & \textbf{0.1156} & \textbf{0.1400} & \textbf{0.0992} & \textbf{0.1070} \\
+Concat (ours)     & \textbf{5.0 / 2.0} & \textbf{0.1161} & \textbf{0.1401} & \textbf{0.0995} & \textbf{0.1072} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:fusion} compares four fusion strategies on Instruments, all using the same SASRec collaborative embedding ($d_c\!=\!256$) and identical T5 configuration (including CPA).
+As shown in Table~\ref{tab:fusion}, we compare four fusion strategies on Instruments, all using the same SASRec collaborative embedding ($d_c\!=\!256$) and identical T5 configuration (including CPA).
 %
 A key architectural distinction separates our approach from the alternatives: concatenation operates at the \emph{raw input level}---the collaborative embedding is concatenated with the content feature before the align encoder, forming an extended input ($d_c\!+\!d_t$ or $d_c\!+\!d_v$ dimensions) that the encoder processes in full.
 %
@@ -758,7 +754,7 @@ Nevertheless, concatenation's inherently low collision rate avoids the need for 
 \subsection{Hyperparameter Sensitivity (RQ4)}
 \label{sec:rq4}
 
-Figure~\ref{fig:hyperparam} reports HR@10 and NDCG@10 on Instruments as we vary four key hyperparameters one at a time.
+As shown in Figure~\ref{fig:hyperparam}, we report HR@10 and NDCG@10 on Instruments as we vary four key hyperparameters one at a time.
 
 \noindent$\bullet$~\textbf{CAR weight $\lambda_r$ (Fig.~\ref{fig:hyperparam}a).}
 %
