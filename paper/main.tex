@@ -107,8 +107,8 @@ Our codes are available at \url{https://anonymous.4open.science/r/CAGRec}.
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{Intro.pdf}
-    \caption{Illustrative comparison on the Instruments dataset. (a)~User interaction history. (b)~Content-only methods fail to surface the ground truth (amplifier): text similarity favors a guitar cable and image similarity favors a guitar case. (c)~Collaborative anchoring correctly ranks the amplifier first and retrieves collaboratively related items that content-only methods miss.}
-    \Description{Illustrative comparison showing content-only methods fail to rank the ground truth item while collaborative anchoring succeeds.}
+    \caption{Illustrative comparison on the Instruments dataset. (a)~Collaborative embeddings are extracted from the user interaction history to anchor item representations. (b)~Content-only methods rank the ground truth (amplifier) last. (c)~With collaborative anchoring, the amplifier rises to rank~\#1 and the model surfaces items (effects pedal) that content-only methods miss.}
+    \Description{Illustrative comparison: content-only methods rank the ground truth item last; after anchoring item representations with collaborative embeddings extracted from the interaction history, the ground truth rises to rank one.}
     \label{fig:intro}
 \end{figure}
 \section{Introduction}
@@ -143,9 +143,11 @@ Existing multi-modal GR methods build code spaces primarily from content feature
 %
 Content similarity, however, does not equal collaborative similarity.
 %
-As shown in Figure~\ref{fig:intro}, given a user who purchased an electric guitar, a tuner, and a guitar pick, content-only methods rank a guitar cable first---its concise description centers on basic instrument-accessory properties, keeping the text embedding close to the guitar---and a guitar case second (high image similarity from its guitar-shaped silhouette), while the ground truth---a guitar amplifier---ranks last because its description is dominated by audio-electronics specifications (wattage, channels, EQ, reverb) that pull the text embedding away from the guitar's instrument-centric description, and its boxy form bears no visual resemblance.
+As shown in Figure~\ref{fig:intro}, given a user who purchased an electric guitar, a tuner, and a guitar pick, content-only methods assign the highest scores to a guitar cable (0.82) and a guitar case (0.79)---the cable's description shares instrument-accessory keywords with the guitar, and the case's guitar-shaped silhouette yields high visual similarity---while the ground truth amplifier receives only 0.41 and ranks last, because its description is dominated by audio-electronics specifications (wattage, channels, EQ, reverb) and its boxy form bears no visual resemblance to the guitar.
 %
-With collaborative anchoring, the amplifier rises to the top because users who buy guitars frequently purchase amplifiers next, and the model also surfaces an effects pedal that content-only methods entirely miss.
+By extracting collaborative embeddings from the interaction history and anchoring item representations with these embeddings, the amplifier rises to rank~\#1 (score 0.91): users who buy guitars frequently purchase amplifiers next.
+%
+The model also surfaces an effects pedal (0.80) that content-only methods entirely miss.
 %
 When the code space primarily reflects content proximity, collaboratively related items receive distant codes, and the autoregressive decoder must predict across a structure that conflicts with the recommendation objective.
 
@@ -532,7 +534,7 @@ We evaluate CAGRec along four research questions:
 
 \subsection{Experimental Setup}
 
-\noindent \textbf{Datasets.}
+\noindent$\bullet$~\textbf{Datasets.}
 We use three categories from the Amazon Product Reviews (2018) dataset~\cite{ni2019justifying}: ``Musical Instruments'' (Instruments), ``Arts, Crafts and Sewing'' (Arts), and ``Video Games'' (Games).
 % 
 Each category contains user reviews with ratings, product metadata (title, description, brand), and product images.
@@ -558,7 +560,7 @@ Games      & 42259 & 13839 & 373514  & 99.94\% & 8.84 \\
 \end{tabular}
 \end{table}
 
-\noindent \textbf{Baselines.}
+\noindent$\bullet$~\textbf{Baselines.}
 We compare with nine representative methods spanning four categories.
 %
 \textit{(i) Traditional sequential recommenders}: \textbf{SASRec}~\cite{sasrec} uses unidirectional self-attention over item ID sequences; \textbf{BERT4Rec}~\cite{sun2019bert4rec} extends this with bidirectional masked prediction; \textbf{S$^3$-Rec}~\cite{zhou2020s3} further introduces self-supervised pre-training with mutual information maximization on item attributes.
@@ -569,12 +571,12 @@ We compare with nine representative methods spanning four categories.
 %
 \textit{(iv) Multimodal generative recommenders}: \textbf{VIP5}~\cite{vip5} extends the P5 framework with visual features through a multimodal adapter; \textbf{MQL4GRec}~\cite{mql} encodes text and image into a shared quantitative language with multi-level codebooks; \textbf{MACRec}~\cite{macrec} applies cross-modal contrastive learning during residual quantization to reduce codebook collisions across text and image paths.
 
-\noindent \textbf{Metrics.}
+\noindent$\bullet$~\textbf{Metrics.}
 We report top-$k$ hit rate (HR@$K$) and normalized discounted cumulative gain (NDCG@$K$) for $K \in \{1, 5, 10\}$.
 % 
 Following~\citet{p5,hua2023index}, we adopt a leave-one-out protocol with full ranking over the entire item set.
 
-\noindent \textbf{Implementation Details.}
+\noindent$\bullet$~\textbf{Implementation Details.}
 We obtain collaborative embeddings ($d_c\!=\!256$) from a SASRec~\cite{sasrec} model pretrained strictly on the training split (excluding validation and test interactions under the leave-one-out protocol), text features ($d_t\!=\!4096$) from LLaMA-7B~\cite{touvron2023llama} mean pooling, and image features ($d_v\!=\!768$) from ViT-L/14~\cite{clip}.
 % 
 For CAR, each item's collaborative neighbor set $\mathcal{N}(i)$ contains the top-$10$ items by cosine similarity in the SASRec embedding space.
