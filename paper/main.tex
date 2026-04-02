@@ -221,7 +221,9 @@ UNGER~\cite{unger} integrates semantic and collaborative knowledge into a unifie
 %
 MSCGRec~\cite{mscgrec} treats collaborative features extracted from a sequential recommender as an additional modality alongside text and image, and proposes constrained sequence learning to restrict the output space during training.
 %
-These methods each inject collaborative signals into the code learning process; however, they either operate on a single content modality~\cite{letter,colarec}, compress all signals into one code at the cost of per-modality discriminability~\cite{unger}, or route collaborative signals through a separate quantization path that does not reshape the text or image code structure~\cite{mscgrec}.
+CEMG~\cite{cemg} dynamically integrates visual and textual features under the guidance of collaborative signals before unified RQ-VAE tokenization; however, it fuses all modalities into a single representation before quantization, sacrificing per-modality discriminability.
+%
+These methods each inject collaborative signals into the code learning process; however, they either operate on a single content modality~\cite{letter,colarec}, compress all signals into one code at the cost of per-modality discriminability~\cite{unger,cemg}, or route collaborative signals through a separate quantization path that does not reshape the text or image code structure~\cite{mscgrec}.
 
 Beyond code-space alignment, ETEGRec~\cite{etegrec} bridges the tokenizer-recommender gap through alternating optimization with distribution-level and preference-level alignment losses, enabling co-adaptation but still relying on single-modality content features with inference restricted to discrete code space.
 
@@ -573,7 +575,7 @@ We report top-$k$ hit rate (HR@$K$) and normalized discounted cumulative gain (N
 Following~\citet{p5,hua2023index}, we adopt a leave-one-out protocol with full ranking over the entire item set.
 
 \noindent \textbf{Implementation Details.}
-We obtain collaborative embeddings ($d_c\!=\!256$) from a pretrained SASRec~\cite{sasrec} model, text features ($d_t\!=\!4096$) from LLaMA-7B~\cite{touvron2023llama} mean pooling, and image features ($d_v\!=\!768$) from ViT-L/14~\cite{clip}.
+We obtain collaborative embeddings ($d_c\!=\!256$) from a SASRec~\cite{sasrec} model pretrained strictly on the training split (excluding validation and test interactions under the leave-one-out protocol), text features ($d_t\!=\!4096$) from LLaMA-7B~\cite{touvron2023llama} mean pooling, and image features ($d_v\!=\!768$) from ViT-L/14~\cite{clip}.
 % 
 For CAR, each item's collaborative neighbor set $\mathcal{N}(i)$ contains the top-$10$ items by cosine similarity in the SASRec embedding space.
 %
@@ -586,6 +588,10 @@ We train with six auxiliary tasks following MACRec~\cite{macrec}.
 CPA uses cosine distance with weight $\lambda_p\!=\!0.005$ and a linear adapter projecting from T5 hidden dimension to the $(d_c\!+\!d_m)$-dimensional collaborative-semantic space.
 % 
 We use AdamW (batch size 1024, learning rate $10^{-3}$), beam search with $B\!=\!20$, dual-path score ensemble, and semantic-aware reranking strength $\beta\!=\!0.1$.
+%
+Under the leave-one-out protocol, we use the second-to-last interaction of each user as the validation set for hyperparameter selection; all hyperparameters ($\lambda_r$, $\lambda_p$, $\lambda_a$, $\beta$) are tuned on the validation set and fixed for test evaluation.
+%
+All reported results are averaged over 5 independent runs with different random seeds.
 % 
 For MQL4GRec, we disable pretraining on additional-category datasets for a fair comparison.
 
