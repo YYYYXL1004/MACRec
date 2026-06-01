@@ -11,7 +11,7 @@ set -e
 DATASET=$1
 GPU=$2
 PORT=$3
-PROJECT_DIR=/sda/data/yaoxianglin/MACRec
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd $PROJECT_DIR
 
 echo "########## [$DATASET] UNGER: Stage-I unified code ##########"

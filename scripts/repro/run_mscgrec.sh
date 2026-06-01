@@ -9,7 +9,7 @@ export NCCL_IB_DISABLE=1
 GPU=$1
 DATASET=$2
 PORT=$3
-PROJECT_DIR=/sda/data/yaoxianglin/MACRec
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd $PROJECT_DIR
 
 DDIR=data/$DATASET
