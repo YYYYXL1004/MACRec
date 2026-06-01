@@ -13,7 +13,10 @@ import json
 import torch.nn.functional as F
 import numpy as np
 from torch.nn import CrossEntropyLoss
-import ipdb
+try:
+    import ipdb
+except ImportError:
+    ipdb = None
 from transformers.modeling_outputs import ModelOutput, BaseModelOutput, BaseModelOutputWithPast, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqLMOutput, Seq2SeqModelOutput
 from transformers.modeling_utils import PreTrainedModel
 try:
